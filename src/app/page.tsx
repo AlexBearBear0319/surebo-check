@@ -22,6 +22,7 @@ interface DetectionResult {
   detectedLanguage: string;
   wasTranslated: boolean;
   processingTimeMs: number;
+  traceId?: string;
 }
 
 interface ChatMessage {
@@ -56,6 +57,17 @@ const QUICK_EXAMPLES = [
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
+// ─── Content-type metadata ──────────────────────────────────────────────────────
+const CONTENT_TYPE_LABEL: Record<string, { icon: string; label: string }> = {
+  youtube:  { icon: "▶", label: "YouTube"  },
+  website:  { icon: "🔗", label: "Website"  },
+  pdf:      { icon: "📄", label: "PDF"      },
+  docx:     { icon: "📝", label: "Word doc" },
+  txt:      { icon: "📄", label: "Text"     },
+  image:    { icon: "🖼", label: "Image"    },
+  audio:    { icon: "🎙", label: "Audio"    },
+};
+
 export default function SureBOPage() {
   const [mode, setMode] = useState<Mode>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -63,10 +75,13 @@ export default function SureBOPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId] = useState(() => typeof crypto !== "undefined" ? crypto.randomUUID() : Math.random().toString(36));
   const [language, setLanguage] = useState<Language>("en");
-  const [isDragging, setIsDragging] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [showUrlInput, setShowUrlInput] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -196,58 +211,79 @@ export default function SureBOPage() {
     }
   }, [sessionId, language]);
 
-  // ── Handle Audio Upload ──────────────────────────────────────────────────────
-  const handleAudioUpload = useCallback(async (file: File) => {
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: `🎙️ Uploaded voice message: ${file.name}`,
-      timestamp: new Date(),
-    };
+  // ── Handle URL / file extraction (YouTube, website, PDF, DOCX, image, etc.) ──
+  const handleExtract = useCallback(async (file?: File, url?: string) => {
+    setShowAttachMenu(false);
+    setShowUrlInput(false);
+    setUrlInput("");
+
+    const sourceLabel = file ? file.name : url ?? "";
     const assistantId = crypto.randomUUID();
-    setMessages((prev) => [...prev, userMsg, {
-      id: assistantId,
-      role: "assistant",
-      content: "Transcribing and analysing audio...",
-      timestamp: new Date(),
-      isStreaming: true,
-    }]);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(), role: "user",
+        content: file ? `Uploaded: ${file.name}` : `🔗 ${url}`,
+        timestamp: new Date(),
+      },
+      {
+        id: assistantId, role: "assistant",
+        content: `Extracting content from ${sourceLabel}...`,
+        timestamp: new Date(), isStreaming: true,
+      },
+    ]);
     setIsLoading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("audio", file);
-      formData.append("detect", "true");
-      formData.append("sessionId", sessionId);
+      let res: Response;
+      if (url) {
+        res = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+      } else {
+        const fd = new FormData();
+        fd.append("file", file!);
+        res = await fetch("/api/extract", { method: "POST", body: fd });
+      }
 
-      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
       const data = await res.json();
+      if (!data.success) throw new Error(data.error);
 
-      if (data.success) {
-        const summary = data.claims?.length > 0
-          ? `Found **${data.claims.length}** claim(s) in audio:\n\n${data.claims.map((c: {claim:string;detection:{verdict:string;confidence:number}},i:number) => `${i+1}. "${c.claim}" → **${c.detection.verdict}** (${Math.round(c.detection.confidence*100)}%)`).join("\n")}\n\n*Transcript: "${data.transcript.slice(0,200)}..."*`
-          : `Transcript: "${data.transcript}" — No specific claims found to verify.`;
+      const { text, contentType, wordCount: wc, title } = data;
+      const meta = CONTENT_TYPE_LABEL[contentType] ?? { icon: "📎", label: contentType };
 
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, content: summary, isStreaming: false }
-              : m
-          )
+      // Show extraction summary
+      const extractSummary = `${meta.icon} **${meta.label}** — ${title ?? sourceLabel}\n${wc} words extracted.\n\n*Preview:* "${text.slice(0, 200)}${text.length > 200 ? "…" : ""}"`;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: extractSummary, isStreaming: false } : m
+        )
+      );
+
+      // Auto-pipe extracted text into detect or chat
+      if (mode === "detect") {
+        await runDetection(text.slice(0, 4000));
+      } else {
+        await sendChatMessage(
+          `I have extracted the following content from ${meta.label} (${sourceLabel}). Please help me understand and verify the key claims:\n\n${text.slice(0, 3000)}`
         );
-      } else throw new Error(data.error);
-    } catch {
+      }
+    } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? { ...m, content: "Audio analysis failed.", isStreaming: false }
+            ? { ...m, content: `Extraction failed: ${String(err)}`, isStreaming: false }
             : m
         )
       );
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
@@ -415,41 +451,136 @@ export default function SureBOPage() {
           {/* Mode hint */}
           <p style={{ fontSize: 11, color: "#475569", letterSpacing: "0.08em", marginBottom: 8 }}>
             {mode === "detect"
-              ? "🔎 DETECT MODE — paste a claim to verify against SG news sources"
-              : "💬 CHAT MODE — ask me anything about Singapore news and policies"}
+              ? "🔎 DETECT MODE — paste a claim or attach content to verify"
+              : "💬 CHAT MODE — ask me anything or attach content to analyse"}
           </p>
 
+          {/* ── URL input panel (shown when URL mode selected) ── */}
+          {showUrlInput && (
+            <div style={{
+              display: "flex", gap: 8, marginBottom: 8,
+              background: "rgba(99,102,241,0.06)",
+              border: "1px solid rgba(99,102,241,0.2)",
+              borderRadius: 10, padding: "8px 12px",
+            }}>
+              <span style={{ fontSize: 16, lineHeight: "32px", flexShrink: 0 }}>🔗</span>
+              <input
+                ref={urlInputRef}
+                type="url"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && urlInput.trim()) handleExtract(undefined, urlInput.trim());
+                  if (e.key === "Escape") { setShowUrlInput(false); setUrlInput(""); }
+                }}
+                placeholder="Paste YouTube URL or website link and press Enter..."
+                style={{
+                  flex: 1, background: "transparent", border: "none", outline: "none",
+                  color: "#e2e8f0", fontSize: 13, fontFamily: "inherit",
+                }}
+                autoFocus
+              />
+              <button
+                onClick={() => urlInput.trim() && handleExtract(undefined, urlInput.trim())}
+                disabled={!urlInput.trim() || isLoading}
+                style={{
+                  padding: "4px 12px", borderRadius: 6, fontSize: 11,
+                  background: urlInput.trim() ? "rgba(99,102,241,0.3)" : "transparent",
+                  border: "1px solid rgba(99,102,241,0.3)",
+                  color: urlInput.trim() ? "#818cf8" : "#475569",
+                  cursor: urlInput.trim() ? "pointer" : "default", letterSpacing: "0.06em",
+                }}
+              >
+                EXTRACT
+              </button>
+              <button
+                onClick={() => { setShowUrlInput(false); setUrlInput(""); }}
+                style={{
+                  background: "transparent", border: "none", color: "#475569",
+                  cursor: "pointer", fontSize: 16, padding: "0 4px",
+                }}
+              >✕</button>
+            </div>
+          )}
+
+          {/* ── Attach menu (shown when + clicked) ── */}
+          {showAttachMenu && (
+            <div style={{
+              display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap",
+              background: "rgba(226,232,240,0.03)",
+              border: "1px solid rgba(226,232,240,0.08)",
+              borderRadius: 10, padding: "10px 12px",
+            }}>
+              {[
+                { icon: "🔗", label: "URL / YouTube", action: () => { setShowUrlInput(true); setShowAttachMenu(false); setTimeout(() => urlInputRef.current?.focus(), 50); } },
+                { icon: "📄", label: "PDF / DOCX / TXT", accept: ".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" },
+                { icon: "🖼", label: "Image", accept: "image/*" },
+                { icon: "🎙", label: "Audio / Video", accept: "audio/*,video/*" },
+              ].map(({ icon, label, action, accept }) => (
+                <button
+                  key={label}
+                  onClick={() => {
+                    if (action) { action(); return; }
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept = accept ?? "*";
+                      fileInputRef.current.click();
+                    }
+                    setShowAttachMenu(false);
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "6px 12px", borderRadius: 7, fontSize: 12,
+                    background: "rgba(226,232,240,0.05)",
+                    border: "1px solid rgba(226,232,240,0.1)",
+                    color: "#94a3b8", cursor: "pointer", transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(239,51,64,0.4)"; (e.currentTarget as HTMLElement).style.color = "#e2e8f0"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(226,232,240,0.1)"; (e.currentTarget as HTMLElement).style.color = "#94a3b8"; }}
+                >
+                  <span style={{ fontSize: 15 }}>{icon}</span>
+                  <span style={{ letterSpacing: "0.04em" }}>{label}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setShowAttachMenu(false)}
+                style={{
+                  marginLeft: "auto", background: "transparent", border: "none",
+                  color: "#475569", cursor: "pointer", fontSize: 16, padding: "0 4px",
+                }}
+              >✕</button>
+            </div>
+          )}
+
+          {/* ── Main input row ── */}
           <div style={{
             display: "flex", gap: 8, alignItems: "flex-end",
             background: "rgba(226,232,240,0.04)",
             border: "1px solid rgba(226,232,240,0.1)",
             borderRadius: 12, padding: "8px 8px 8px 14px",
-            transition: "border-color 0.15s",
-          }}
-            onFocus={() => {}}
-          >
-            {/* Audio upload button */}
+          }}>
+            {/* Attach button */}
             <button
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload WhatsApp voice note"
+              onClick={() => { setShowAttachMenu((v) => !v); setShowUrlInput(false); }}
+              title="Attach content"
               style={{
-                padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(226,232,240,0.1)",
-                background: "transparent", color: "#64748b", cursor: "pointer", fontSize: 16,
-                flexShrink: 0, transition: "all 0.15s",
+                padding: "8px 10px", borderRadius: 8,
+                border: `1px solid ${showAttachMenu ? "rgba(239,51,64,0.4)" : "rgba(226,232,240,0.1)"}`,
+                background: showAttachMenu ? "rgba(239,51,64,0.1)" : "transparent",
+                color: showAttachMenu ? "#EF3340" : "#64748b",
+                cursor: "pointer", fontSize: 16, flexShrink: 0, transition: "all 0.15s",
               }}
-              onMouseEnter={(e) => { (e.target as HTMLElement).style.color = "#EF3340"; }}
-              onMouseLeave={(e) => { (e.target as HTMLElement).style.color = "#64748b"; }}
             >
-              🎙️
+              📎
             </button>
+
+            {/* Hidden file input — accept is set dynamically by attach menu */}
             <input
               ref={fileInputRef}
               type="file"
-              accept="audio/*,video/mp4"
               style={{ display: "none" }}
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) handleAudioUpload(file);
+                if (file) handleExtract(file);
                 e.target.value = "";
               }}
             />
@@ -578,7 +709,18 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
 function DetectionCard({ result }: { result: DetectionResult }) {
   const [expanded, setExpanded] = useState(false);
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
   const cfg = VERDICT_CONFIG[result.verdict];
+
+  const submitFeedback = async (value: 0 | 1) => {
+    if (!result.traceId || feedback) return;
+    setFeedback(value === 1 ? "up" : "down");
+    await fetch("/api/score", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ traceId: result.traceId, value }),
+    }).catch(() => {});
+  };
 
   return (
     <div style={{
@@ -615,17 +757,33 @@ function DetectionCard({ result }: { result: DetectionResult }) {
           </div>
         </div>
 
-        {/* Confidence bar */}
+        {/* Confidence bar + feedback + expand */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
           <div style={{ width: 80, height: 4, background: "rgba(226,232,240,0.1)", borderRadius: 2, overflow: "hidden" }}>
             <div style={{ width: `${result.confidence * 100}%`, height: "100%", background: cfg.color, borderRadius: 2 }} />
           </div>
-          <button onClick={() => setExpanded(!expanded)} style={{
-            fontSize: 10, color: "#64748b", background: "transparent",
-            border: "none", cursor: "pointer", letterSpacing: "0.08em",
-          }}>
-            {expanded ? "COLLAPSE ▲" : "DETAILS ▼"}
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {result.traceId && (
+              <>
+                <button onClick={() => submitFeedback(1)} title="Helpful" style={{
+                  fontSize: 13, background: "transparent", border: "none",
+                  cursor: feedback ? "default" : "pointer",
+                  opacity: feedback && feedback !== "up" ? 0.2 : 1, transition: "opacity 0.15s",
+                }}>👍</button>
+                <button onClick={() => submitFeedback(0)} title="Incorrect" style={{
+                  fontSize: 13, background: "transparent", border: "none",
+                  cursor: feedback ? "default" : "pointer",
+                  opacity: feedback && feedback !== "down" ? 0.2 : 1, transition: "opacity 0.15s",
+                }}>👎</button>
+              </>
+            )}
+            <button onClick={() => setExpanded(!expanded)} style={{
+              fontSize: 10, color: "#64748b", background: "transparent",
+              border: "none", cursor: "pointer", letterSpacing: "0.08em",
+            }}>
+              {expanded ? "COLLAPSE ▲" : "DETAILS ▼"}
+            </button>
+          </div>
         </div>
       </div>
 

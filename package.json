@@ -7,19 +7,31 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:init": "tsx src/scripts/init-db.ts"
+    "db:init": "tsx src/scripts/init-db.ts",
+    "feeds:ingest": "tsx src/scripts/ingest-feeds.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.4.0",
     "@langchain/core": "^0.3.0",
     "@langchain/openai": "^0.3.0",
     "@tailwindcss/postcss": "^4.2.1",
+    "@tavily/core": "^0.7.2",
+    "@types/pdf-parse": "^1.1.5",
+    "franc-min": "^6.2.0",
     "langchain": "^0.3.0",
+    "langfuse": "^3.0.0",
+    "langfuse-langchain": "^3.0.0",
+    "mammoth": "^1.11.0",
     "next": "15.1.0",
     "openai": "^4.67.0",
+    "pdf-parse": "^2.4.5",
     "react": "^18",
     "react-dom": "^18",
-    "uuid": "^10.0.0"
+    "rss-parser": "^3.13.0",
+    "tailwindcss": "^4.2.1",
+    "uuid": "^10.0.0",
+    "youtube-transcript": "^1.2.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^20",

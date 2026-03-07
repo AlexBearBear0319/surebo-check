@@ -5,8 +5,22 @@
  * Covers Singapore's four official languages: English, Malay, Mandarin, Tamil.
  */
 
+import { franc } from "franc-min";
+
 const HF_API = "https://api-inference.huggingface.co/models";
 const HF_TOKEN = process.env.HUGGINGFACE_API_TOKEN;
+
+// franc ISO 639-3 codes → our SupportedLang
+const FRANC_MAP: Record<string, SupportedLang> = {
+  eng: "en",
+  msa: "ms", // Malay (standard)
+  zlm: "ms", // Malay (colloquial / Malaysian)
+  zsm: "ms", // Malay (standardised)
+  zho: "zh", // Chinese (generic)
+  cmn: "zh", // Mandarin
+  yue: "zh", // Cantonese — treat as zh for translation
+  tam: "ta", // Tamil
+};
 
 export type SupportedLang = "en" | "ms" | "zh" | "ta";
 
@@ -57,16 +71,23 @@ export async function translateText(
   }
 }
 
-/** Heuristic language detector — Unicode ranges + Malay stopwords */
+/** Language detector — Unicode fast-path for CJK/Tamil, franc trigrams for the rest */
 export function detectLang(text: string): SupportedLang {
-  if (/[\u0B80-\u0BFF]/.test(text)) return "ta";
-  if (/[\u4E00-\u9FFF\u3400-\u4DBF]/.test(text)) return "zh";
+  // Unicode script ranges are definitive — always check these first
+  if (/[\u0B80-\u0BFF]/.test(text)) return "ta";                      // Tamil block
+  if (/[\u4E00-\u9FFF\u3400-\u4DBF\u{20000}-\u{2A6DF}]/u.test(text)) return "zh"; // CJK
 
-  const words = text.toLowerCase().split(/\s+/);
-  const malayStops = ["dan", "yang", "dengan", "ini", "itu", "tidak", "ada", "untuk", "dari", "di", "ke", "pada"];
-  if (words.filter((w) => malayStops.includes(w)).length >= 2) return "ms";
+  // For short strings franc is unreliable — fall back to Malay stopword heuristic
+  if (text.trim().length < 30) {
+    const words     = text.toLowerCase().split(/\s+/);
+    const malayStop = ["dan","yang","dengan","ini","itu","tidak","ada","untuk","dari","di","ke","pada","ia","mereka","kami"];
+    if (words.filter((w) => malayStop.includes(w)).length >= 2) return "ms";
+    return "en";
+  }
 
-  return "en";
+  // franc trigram analysis for longer text
+  const iso3 = franc(text, { minLength: 10, only: ["eng","msa","zlm","zsm","zho","cmn","yue","tam"] });
+  return FRANC_MAP[iso3] ?? "en";
 }
 
 /** Translate any claim into English for processing */
