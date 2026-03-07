@@ -152,64 +152,12 @@ export function DetectionCard({ result }: DetectionCardProps) {
                 padding: "14px",
               }}
             >
-              <p style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#15803d" }}>
+              <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 700, color: "#15803d" }}>
                 📰 THE REAL STORY
               </p>
-              {/* Parse the 3-line true_story format */}
-              {result.true_story?.split("\n").map((line, i) => {
-                const isReadMore = line.toLowerCase().startsWith("to read more:");
-                const url = isReadMore
-                  ? line.replace(/to read more:\s*/i, "").trim()
-                  : null;
-                const isUrl = url && url.startsWith("http");
-
-                if (isReadMore) {
-                  return (
-                    <div key={i} style={{ marginTop: 12 }}>
-                      <p style={{ margin: "0 0 6px", fontSize: 13, fontWeight: 600, color: "#15803d" }}>
-                        📖 To read more:
-                      </p>
-                      {isUrl ? (
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: "inline-block",
-                            background: "#15803d",
-                            color: "#ffffff",
-                            fontSize: 15,
-                            fontWeight: 600,
-                            padding: "10px 16px",
-                            borderRadius: 8,
-                            textDecoration: "none",
-                            lineHeight: 1.4,
-                            wordBreak: "break-all",
-                          }}
-                        >
-                          🔗 Open article →
-                        </a>
-                      ) : (
-                        <p style={{ margin: 0, fontSize: 15, color: "#166534" }}>{url}</p>
-                      )}
-                    </div>
-                  );
-                }
-
-                const label = line.startsWith("Latest news:") ? "📌 Latest news:"
-                  : line.startsWith("Status:") ? "🔖 Status:"
-                  : null;
-                const body = label
-                  ? line.replace(/^(Latest news:|Status:)\s*/i, "").trim()
-                  : line;
-
-                return (
-                  <p key={i} style={{ margin: "0 0 8px", fontSize: 15, color: "#166534", lineHeight: 1.8 }}>
-                    {label && <span style={{ fontWeight: 700 }}>{label} </span>}
-                    {body}
-                  </p>
-                );
-              })}
+              <p style={{ margin: 0, fontSize: 15, color: "#166534", lineHeight: 1.8 }}>
+                {result.true_story}
+              </p>
             </div>
           )}
 
