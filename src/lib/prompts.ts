@@ -60,7 +60,7 @@ Notable Figures: PM, Ministers, Temasek, GIC leadership
 - Note satire/parody explicitly if detected to prevent confusion
 - If claim originated from unverified WhatsApp/Telegram chain messages, mark as HIGH RISK
 - Current date: {current_date}
-- User language: {language}
+- LANGUAGE REQUIREMENT: Always detect the language of the user's latest message and respond ENTIRELY in that same language. If they wrote in 中文 respond in 中文, if Bahasa Melayu respond in Bahasa Melayu, if தமிழ் respond in தமிழ், if English respond in English. NEVER mix languages in a single response.
 
 Relevant Singapore news context:
 {context}
@@ -75,6 +75,8 @@ export const DETECTION_PROMPT = ChatPromptTemplate.fromMessages([
   HumanMessagePromptTemplate.fromTemplate(`
 CREDIBILITY ANALYSIS REQUEST:
 
+DETECT the language of the claim below and write ALL JSON string values in that SAME language.
+
 Claim: {claim}
 Source: {source_of_claim}
 Original Language: {original_language}
@@ -86,19 +88,21 @@ ANALYSIS TASKS:
 4. Check for context: Is anything missing that would change the meaning?
 5. Verify via multiple sources: Do credible sources confirm or contradict?
 
-Respond ONLY with valid JSON (no markdown, no extra text):
+Respond ONLY with valid JSON (no markdown, no extra text). ALL string values must be in the user's language:
 {{
   "verdict": "REAL|FAKE|MISLEADING|UNVERIFIED",
   "confidence": <0.0-1.0 numeric value>,
-  "headline": "<single-line verdict summary with main finding>",
-  "explanation": "<2-3 SHORT paragraphs: (1) what the claim says and verdict, (2) key evidence for/against, (3) Singapore-specific context if relevant. Be direct, no padding>",
-  "true_story": "<Based on ALL sources above (especially [CURRENT STATUS] block), write 2-3 sentences covering: (1) What the real facts are, citing source name + date + URL. (2) Current status — choose ONE: 'This is STILL ONGOING as of [date]' / 'This has since been RESOLVED — [what happened]' / 'This claim does NOT EXIST in any official record.' (3) Where the reader can verify: official agency or news site. Example: 'According to CNA (12 Jan 2025, channelnewsasia.com), PM Lee officially handed over to Lawrence Wong on 15 May 2024. This transition is COMPLETE — Lawrence Wong has been PM since then. Verify at channelnewsasia.com or pmo.gov.sg.'>",
-  "red_flags": ["<specific problematic element 1>", "<specific problematic element 2>"],
-  "supporting_evidence": ["<verified fact from credible source with context>", "<another supporting fact>"],
-  "trusted_sources": ["<Source Name — full URL if credible>"],
-  "what_to_do": "<actionable next steps for user to verify independently or seek help from official agencies>",
+  "headline": "<verdict summary — in user's language>",
+  "explanation": "<2-3 SHORT paragraphs covering: what the claim says and verdict, key evidence for/against, Singapore-specific context. Be direct. Write in user's language.>",
+  "true_story": "<2-3 sentences: (1) real facts with source name + date + URL, (2) STILL ONGOING / RESOLVED — [outcome] / DOES NOT EXIST in any official record, (3) where to verify. Write in user's language.>",
+  "red_flags": ["<problematic element — in user's language>"],
+  "supporting_evidence": ["<verified fact from credible source — in user's language>"],
+  "trusted_sources": ["<Source Name — URL>"],
+  "what_to_do": "<actionable next steps — in user's language>",
   "related_official_links": ["<official SG government or CNA link>"]
-}}`),
+}}
+
+⚠️ NON-NEGOTIABLE: If the claim is in Chinese, write ALL values in Chinese. If Malay, all Malay. If Tamil, all Tamil. If English, all English. JSON keys stay in English. Do NOT mix languages.`),
 ]);
 
 // ─── Conversational Chat Prompt ───────────────────────────────────────────────
@@ -109,13 +113,15 @@ export const CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   HumanMessagePromptTemplate.fromTemplate(
     `{input}
 
-RESPONSE FORMAT — follow this exactly, no exceptions:
+DETECT the language of the message above and write your ENTIRE response in that SAME language. Every single word.
 
-→ This [statement / image / article / video / audio] is about [one sentence describing what the content claims or shows]
-→ Result: [REAL/FAKE/MISLEADING/UNVERIFIED] — [0-100]% [credible / suspicious / misleading / unconfirmed]
-→ 📰 True story: [Using the [CURRENT STATUS] sources provided — state: (a) what the real facts are (source + date + URL), then (b) current status: "STILL ONGOING", "RESOLVED — [outcome]", or "DOES NOT EXIST in any official record". If nothing found: "No official report found — check gov.sg or CNA to be safe."]
+RESPONSE STRUCTURE — 4 parts, no deviations:
+1. ONE sentence describing what this claim/content is about (translated into the user's language)
+2. Verdict: REAL / FAKE / MISLEADING / UNVERIFIED — confidence 0-100% — brief credibility label (all in user's language)
+3. 📰 True story: (a) real facts with source name + date + URL, (b) current status — choose one: STILL ONGOING / RESOLVED — [outcome] / DOES NOT EXIST in any official record (if nothing found: suggest gov.sg or CNA) — write in user's language
+4. 1-2 sentences on the single most important reason for the verdict — in user's language. No padding.
 
-[1-2 sentences only: the single most important reason for the verdict. No padding.]`
+⚠️ NON-NEGOTIABLE: If the user's message is in Chinese, respond 100% in Chinese. If Malay, 100% in Malay. If Tamil, 100% in Tamil. If English, 100% in English. Do NOT mix languages. Do NOT use English labels or headings unless the user wrote in English.`
   ),
 ]);
 

@@ -2,87 +2,73 @@
  * src/lib/detector.ts
  *
  * Top-level SureBO detection pipeline.
- * Orchestrates: translate → RAG detect → enrich → persist → track in Langfuse.
+ * Orchestrates: RAG detect → enrich → persist → track in Langfuse.
  */
 
-import { normaliseToEnglish, localiseResponse, type SupportedLang } from "./translation";
 import { runDetection, extractClaims, type DetectionResult }        from "./chain";
 import { saveFactCheck, upsertTrendingClaim }                       from "./db";
 import { getOfficialLinks }                                         from "./sources";
 import { transcribeAudio, transcribeLongAudio }                     from "./whisper";
 import { getLangfuse }                                              from "./langfuse";
+import type { Language }                                            from "@/types";
 
 // ─── Single Claim Detection ───────────────────────────────────────────────────
 
 export interface DetectRequest {
   claim:           string;
   sourceContext?:  string;
-  language?:       SupportedLang;
-  localise?:       boolean;
+  language?:       Language;
   sessionId:       string;
 }
 
 export interface FullDetectionResult extends DetectionResult {
-  originalClaim:         string;
-  normalisedClaim:       string;
-  detectedLanguage:      SupportedLang;
-  wasTranslated:         boolean;
-  localisedExplanation?: string;
-  processingTimeMs:      number;
+  originalClaim:    string;
+  processingTimeMs: number;
   /** Langfuse trace ID — send back to /api/score for user feedback scoring */
-  traceId?:              string;
+  traceId?:         string;
 }
 
 export async function detectClaim(req: DetectRequest): Promise<FullDetectionResult> {
   const t0 = Date.now();
 
-  // 1. Normalise to English
-  const { englishText, originalLang, wasTranslated } =
-    await normaliseToEnglish(req.claim);
-
-  // 2. RAG detection
+  // RAG detection — LLM handles multilingual natively
   const result = await runDetection({
-    claim:             englishText,
+    claim:             req.claim,
     source_of_claim:   req.sourceContext ?? "Unknown",
-    original_language: originalLang,
+    original_language: req.language ?? "en",
+    output_language:   req.language,
     session_id:        req.sessionId,
   });
 
-  // 3. Enrich with official SG links
-  const extraLinks = getOfficialLinks(englishText);
+  // Enrich with official SG links
+  const extraLinks = getOfficialLinks(req.claim);
   const allLinks   = [...new Set([...(result.related_official_links ?? []), ...extraLinks])].slice(0, 5);
-
-  // 4. Optional back-translation of explanation
-  let localisedExplanation: string | undefined;
-  if (req.localise && originalLang !== "en" && wasTranslated) {
-    localisedExplanation = await localiseResponse(result.explanation, originalLang).catch(() => undefined);
-  }
 
   const processingTimeMs = Date.now() - t0;
 
-  // 5. Persist (fire-and-forget)
+  // Persist (fire-and-forget)
   Promise.all([
     saveFactCheck({
-      claim:         englishText,
+      claim:         req.claim,
       verdict:       result.verdict,
       confidence:    result.confidence,
       explanation:   result.explanation,
       sources:       result.trusted_sources ?? [],
-      language:      "en",
-      original_lang: originalLang,
+      language:      req.language ?? "en",
+      original_lang: req.language ?? "en",
       session_id:    req.sessionId,
     }),
-    upsertTrendingClaim(englishText.slice(0, 255), result.verdict),
+    upsertTrendingClaim(req.claim.slice(0, 255), result.verdict),
   ]).catch((err) => console.warn("[Detector] Persist error:", err));
 
-  // 6. Capture traceId for user feedback scoring via /api/score
+  // Capture traceId for user feedback scoring via /api/score
   const lf      = getLangfuse();
   const lfTrace = lf.trace({
     name:      "surebo.detection-result",
     sessionId: req.sessionId,
-    input:     { claim: englishText, language: originalLang },
+    input:     { claim: req.claim, language: req.language },
     output:    { verdict: result.verdict, confidence: result.confidence },
-    metadata:  { processingMs: processingTimeMs, wasTranslated },
+    metadata:  { processingMs: processingTimeMs },
   });
   lf.flushAsync().catch(() => {});
 
@@ -90,10 +76,6 @@ export async function detectClaim(req: DetectRequest): Promise<FullDetectionResu
     ...result,
     related_official_links: allLinks,
     originalClaim:          req.claim,
-    normalisedClaim:        englishText,
-    detectedLanguage:       originalLang,
-    wasTranslated,
-    localisedExplanation,
     processingTimeMs,
     traceId:                lfTrace.id,
   };
@@ -106,7 +88,7 @@ export interface AudioDetectRequest {
   audioUrl?:    string;
   filename?:    string;
   sessionId:    string;
-  localise?:    boolean;
+  language?:    Language;
 }
 
 export interface AudioDetectionResult {
@@ -135,7 +117,7 @@ export async function detectAudio(req: AudioDetectRequest): Promise<AudioDetecti
     const batch   = claims.slice(i, i + 3);
     const results = await Promise.all(
       batch.map((c) =>
-        detectClaim({ claim: c.claim, sourceContext: "audio/voice message", sessionId: req.sessionId, localise: req.localise })
+        detectClaim({ claim: c.claim, sourceContext: "audio/voice message", sessionId: req.sessionId, language: req.language })
       )
     );
     detected.push(...batch.map((c, j) => ({ ...c, detection: results[j] })));

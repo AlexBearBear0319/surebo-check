@@ -4,13 +4,14 @@
 
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 import { SessionSidebar } from "@/components/SessionSidebar";
 import { MessageBubble } from "@/components/MessageBubble";
 import { InputBar } from "@/components/InputBar";
-import { LANGUAGE_LABELS, CONTENT_TYPE_LABEL, QUICK_EXAMPLES } from "@/config/ui";
+import { CONTENT_TYPE_LABEL, QUICK_EXAMPLES_BY_LANG, UI_STRINGS } from "@/config/ui";
 import type { ChatMessage, DetectionResult, Language, Mode, SessionMeta } from "@/types";
+import { DEVICE_ID_HEADER, DEVICE_ID_STORAGE_KEY } from "@/lib/deviceId";
 
 // ─── Page component ─────────────────────────────────────────────────────────────
 
@@ -20,14 +21,36 @@ export default function SureBOPage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionCreating, setSessionCreating] = useState(false);
-  const [language, setLanguage] = useState<Language>("en");
+  const [language] = useState<Language>("en");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
 
   // ── New-chat modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [newChatInput, setNewChatInput] = useState("");
   const newChatInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Device identity (anonymous, persisted in localStorage) ─────────────────
+  const deviceId = useMemo<string>(() => {
+    try {
+      const stored = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+      if (stored) return stored;
+      const fresh = crypto.randomUUID();
+      localStorage.setItem(DEVICE_ID_STORAGE_KEY, fresh);
+      return fresh;
+    } catch {
+      return crypto.randomUUID(); // SSR / private-browsing fallback
+    }
+  }, []);
+
+  // Wrapper around fetch that always attaches X-Device-ID
+  const apiFetch = useCallback(
+    (url: string, init?: RequestInit) =>
+      fetch(url, {
+        ...init,
+        headers: { [DEVICE_ID_HEADER]: deviceId, ...(init?.headers ?? {}) },
+      }),
+    [deviceId],
+  );
 
   // ── Session store ──────────────────────────────────────────────────────────
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
@@ -46,20 +69,11 @@ export default function SureBOPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Close language dropdown when clicking outside
-  useEffect(() => {
-    const handler = () => setLanguageDropdownOpen(false);
-    if (languageDropdownOpen) {
-      document.addEventListener("click", handler);
-      return () => document.removeEventListener("click", handler);
-    }
-  }, [languageDropdownOpen]);
-
   // Fetch session list and auto-select/create a session so there is always an
   // active session when the page loads.
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch("/api/chat/list");
+      const res = await apiFetch("/api/chat/list");
       const data = await res.json() as { sessions: { session_id: string; topic: string }[] };
       const list = (data.sessions ?? []).map((s) => ({ id: s.session_id, name: s.topic }));
       setSessions(list);
@@ -68,7 +82,7 @@ export default function SureBOPage() {
         // Auto-select the most recent session and load its history
         setActiveSessionIdState(list[0].id);
         // Load history in background — use a separate fetch so isLoading stays false
-        fetch(`/api/chat/history?sessionId=${encodeURIComponent(list[0].id)}`)
+        apiFetch(`/api/chat/history?sessionId=${encodeURIComponent(list[0].id)}`)
           .then((r) => r.json())
           .then((d: { messages?: { role: string; content: string; created_at: string }[] }) => {
             const loaded: import("@/types").ChatMessage[] = (d.messages ?? []).map((m) => ({
@@ -100,7 +114,8 @@ export default function SureBOPage() {
     } finally {
       setSessionsLoading(false);
     }
-  }, []);
+  // apiFetch is stable (useMemo'd deviceId), safe to omit from ESLint perspective
+  }, [apiFetch]);
 
   useEffect(() => {
     fetchSessions();
@@ -122,7 +137,7 @@ export default function SureBOPage() {
     setInput("");
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(id)}`);
+      const res = await apiFetch(`/api/chat/history?sessionId=${encodeURIComponent(id)}`);
       const data = await res.json() as {
         messages: { role: string; content: string; created_at: string }[];
       };
@@ -146,22 +161,19 @@ export default function SureBOPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [apiFetch]);
 
   const renameSession = useCallback(async (id: string, name: string) => {
     // Optimistic update
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, name } : s))
     );
-    await fetch("/api/chat/rename", {
+    await apiFetch("/api/chat/rename", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: id, topic: name }),
-    }).catch(() => {
-      // revert on failure by re-fetching
-      fetchSessions();
-    });
-  }, [fetchSessions]);
+    }).catch(() => fetchSessions());
+  }, [apiFetch, fetchSessions]);
 
   const deleteSession = useCallback(
     async (id: string) => {
@@ -171,13 +183,13 @@ export default function SureBOPage() {
         setMessages([]);
         setActiveSessionIdState("");
       }
-      await fetch("/api/chat/delete", {
+      await apiFetch("/api/chat/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: id }),
       }).catch(() => fetchSessions());
     },
-    [activeSessionId, fetchSessions]
+    [apiFetch, activeSessionId, fetchSessions]
   );
 
   // ── Refs ───────────────────────────────────────────────────────────────────
@@ -227,7 +239,7 @@ export default function SureBOPage() {
       setIsLoading(true);
 
       try {
-        const res = await fetch("/api/chat", {
+        const res = await apiFetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -306,7 +318,7 @@ export default function SureBOPage() {
         setIsLoading(false);
       }
     },
-    [activeSessionId, language]
+    [apiFetch, activeSessionId, language]
   );
 
   // ── Run detection ──────────────────────────────────────────────────────────
@@ -348,14 +360,13 @@ export default function SureBOPage() {
       setIsLoading(true);
 
       try {
-        const res = await fetch("/api/detect", {
+        const res = await apiFetch("/api/detect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             claim: text,
             sessionId: effectiveSessionId,
             language,
-            localise: language !== "en",
           }),
         });
         const data = await res.json();
@@ -388,7 +399,7 @@ export default function SureBOPage() {
         setIsLoading(false);
       }
     },
-    [activeSessionId, language]
+    [apiFetch, activeSessionId, language]
   );
 
   // Called when the user submits the first message from the new-chat modal.
@@ -406,7 +417,7 @@ export default function SureBOPage() {
     const topic = text.length > 80 ? text.slice(0, 79) + "\u2026" : text;
     let sessionId: string;
     try {
-      const res = await fetch("/api/chat/new", {
+      const res = await apiFetch("/api/chat/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
@@ -423,7 +434,7 @@ export default function SureBOPage() {
 
     if (mode === "detect") await runDetection(text, sessionId);
     else await sendChatMessage(text, sessionId);
-  }, [newChatInput, isLoading, mode, runDetection, sendChatMessage]);
+  }, [apiFetch, newChatInput, isLoading, mode, runDetection, sendChatMessage]);
 
   // ── Extract URL / file then detect or chat ─────────────────────────────────
   const handleExtract = useCallback(
@@ -454,7 +465,7 @@ export default function SureBOPage() {
       let sessionId = activeSessionId;
       if (!sessionId) {
         try {
-          const newRes = await fetch("/api/chat/new", {
+          const newRes = await apiFetch("/api/chat/new", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ topic: sourceLabel.slice(0, 80) }),
@@ -471,7 +482,7 @@ export default function SureBOPage() {
       try {
         let res: Response;
         if (url) {
-          res = await fetch("/api/extract", {
+          res = await apiFetch("/api/extract", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url }),
@@ -479,7 +490,7 @@ export default function SureBOPage() {
         } else {
           const fd = new FormData();
           fd.append("file", file!);
-          res = await fetch("/api/extract", { method: "POST", body: fd });
+          res = await apiFetch("/api/extract", { method: "POST", body: fd });
         }
 
         const data = await res.json();
@@ -507,7 +518,7 @@ export default function SureBOPage() {
 
         // Persist the upload label + extraction summary — await so they land
         // in DB before the AI chain runs and saves its response after them.
-        await fetch("/api/chat/save", {
+        await apiFetch("/api/chat/save", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -544,12 +555,12 @@ export default function SureBOPage() {
         setIsLoading(false);
       }
     },
-    [mode, runDetection, sendChatMessage, activeSessionId]
+    [apiFetch, mode, runDetection, sendChatMessage, activeSessionId]
   );
 
   // ── Submit ─────────────────────────────────────────────────────────────────
-  const handleSubmit = useCallback(async () => {
-    const text = input.trim();
+  const handleSubmit = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || isLoading) return;
 
     // If the input looks like a bare URL, route it through extract (handles YouTube, websites, etc.)
@@ -569,21 +580,26 @@ export default function SureBOPage() {
     // Ensure a session exists before sending
     let sessionId = activeSessionId;
     if (!sessionId) {
+      const topic = text.length > 80 ? text.slice(0, 79) + "\u2026" : text;
       try {
-        const res = await fetch("/api/chat/new", { method: "POST" });
+const res = await apiFetch("/api/chat/new", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic }),
+        });
         const data = await res.json() as { session_id: string };
         sessionId = data.session_id || crypto.randomUUID();
       } catch {
         sessionId = crypto.randomUUID();
       }
       setActiveSessionIdState(sessionId);
-      setSessions((prev) => [{ id: sessionId, name: "New Chat" }, ...prev]);
+      setSessions((prev) => [{ id: sessionId, name: topic }, ...prev]);
     }
 
     // Pass the resolved sessionId directly to avoid stale closure
     if (mode === "detect") await runDetection(text, sessionId);
     else await sendChatMessage(text, sessionId);
-  }, [input, isLoading, mode, activeSessionId, runDetection, sendChatMessage, handleExtract]);
+  }, [apiFetch, input, isLoading, mode, activeSessionId, runDetection, sendChatMessage, handleExtract]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -689,87 +705,6 @@ export default function SureBOPage() {
               SureBO
             </h1>
           </div>
-
-          {/* Language picker dropdown */}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setLanguageDropdownOpen((v) => !v);
-              }}
-              style={{
-                padding: "6px 12px",
-                fontSize: 12,
-                fontWeight: 500,
-                borderRadius: 6,
-                border: "1px solid #e5e7eb",
-                background: "#ffffff",
-                color: "#374151",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                transition: "all 0.2s",
-              }}
-            >
-              🌐 {LANGUAGE_LABELS[language]}
-              <span style={{ fontSize: 10 }}>▼</span>
-            </button>
-
-            {/* Dropdown menu */}
-            {languageDropdownOpen && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "calc(100% + 4px)",
-                  background: "#ffffff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                  minWidth: 140,
-                  zIndex: 1000,
-                  overflow: "hidden",
-                }}
-              >
-                {(Object.keys(LANGUAGE_LABELS) as Language[]).map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => {
-                      setLanguage(lang);
-                      setLanguageDropdownOpen(false);
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      fontSize: 13,
-                      fontWeight: language === lang ? 600 : 400,
-                      border: "none",
-                      background: language === lang ? "#eff6ff" : "transparent",
-                      color: language === lang ? "#3b82f6" : "#374151",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "all 0.15s",
-                      fontFamily: "inherit",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (language !== lang) {
-                        (e.currentTarget as HTMLElement).style.background = "#f9fafb";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (language !== lang) {
-                        (e.currentTarget as HTMLElement).style.background = "transparent";
-                      }
-                    }}
-                  >
-                    {LANGUAGE_LABELS[lang]}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         </header>
 
         {/* ── Main content ── */}
@@ -822,7 +757,7 @@ export default function SureBOPage() {
                     margin: "0 0 12px",
                   }}
                 >
-                  What would you like to verify?
+                  {UI_STRINGS[language].emptyHeading}
                 </h2>
                 <p
                   style={{
@@ -833,8 +768,7 @@ export default function SureBOPage() {
                     margin: "0 auto",
                   }}
                 >
-                  Fact-check news claims in English, Bahasa Melayu, 中文, or
-                  தமிழ் instantly.
+                  {UI_STRINGS[language].emptySubtext}
                 </p>
               </div>
 
@@ -850,7 +784,7 @@ export default function SureBOPage() {
                     textAlign: "center",
                   }}
                 >
-                  EXAMPLES
+                  {UI_STRINGS[language].examplesLabel}
                 </p>
                 <div
                   className="mobile-examples"
@@ -860,7 +794,7 @@ export default function SureBOPage() {
                     gap: 12,
                   }}
                 >
-                  {QUICK_EXAMPLES.map((ex) => (
+                  {QUICK_EXAMPLES_BY_LANG[language].map((ex) => (
                     <button
                       key={ex}
                       onClick={() => {
@@ -931,8 +865,10 @@ export default function SureBOPage() {
           input={input}
           isLoading={isLoading}
           mode={mode}
+          language={language}
           onInputChange={setInput}
           onSubmit={handleSubmit}
+          onSubmitText={(text) => { setInput(text); handleSubmit(text); }}
           onExtract={handleExtract}
           inputRef={inputRef}
         />
@@ -970,10 +906,10 @@ export default function SureBOPage() {
           >
             <div>
               <h2 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 700, color: "#111827" }}>
-                Start a new chat
+                {UI_STRINGS[language].newChatTitle}
               </h2>
               <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
-                What would you like to verify or discuss?
+                {UI_STRINGS[language].newChatSubtext}
               </p>
             </div>
 
@@ -985,7 +921,7 @@ export default function SureBOPage() {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewChat(); }
                 if (e.key === "Escape") setShowNewChatModal(false);
               }}
-              placeholder="e.g. Is it true that MRT fares are increasing?"
+              placeholder={UI_STRINGS[language].newChatPlaceholder}
               rows={3}
               style={{
                 width: "100%",
@@ -1018,7 +954,7 @@ export default function SureBOPage() {
                   fontFamily: "inherit",
                 }}
               >
-                Cancel
+                {UI_STRINGS[language].cancelBtn}
               </button>
               <button
                 onClick={submitNewChat}
@@ -1036,7 +972,7 @@ export default function SureBOPage() {
                   transition: "background 0.2s",
                 }}
               >
-                Start Chat
+                {UI_STRINGS[language].startBtn}
               </button>
             </div>
           </div>

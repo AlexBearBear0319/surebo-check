@@ -1,18 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { sbListSessions } from "@/lib/supabase";
 import { safeError } from "@/lib/errors";
+import { getDeviceIdFromRequest } from "@/lib/deviceId";
 
 export const runtime     = "nodejs";
 export const maxDuration = 30;
 
 /**
  * GET /api/chat/list
- * Returns all sessions ordered by most recently updated.
+ * Returns sessions for the requesting device, ordered by most recently updated.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const rows = await sbListSessions();
-    // Map Supabase `id` → `session_id` to keep the frontend API stable
+    const deviceId = getDeviceIdFromRequest(req);
+    const rows = await sbListSessions(deviceId);
     const sessions = rows.map((s) => ({ session_id: s.id, topic: s.topic }));
     return NextResponse.json({ sessions });
   } catch (err) {

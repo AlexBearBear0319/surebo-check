@@ -20,13 +20,11 @@ export async function POST(req: NextRequest) {
       sourceContext,
       language,
       sessionId = randomUUID(),
-      localise  = false,
     } = await req.json() as {
       claim:          string;
       sourceContext?: string;
       language?:      string;
       sessionId?:     string;
-      localise?:      boolean;
     };
 
     if (!claim?.trim()) {
@@ -41,7 +39,6 @@ export async function POST(req: NextRequest) {
       sourceContext,
       language:       language as "en" | "ms" | "zh" | "ta" | undefined,
       sessionId,
-      localise,
     });
 
     return NextResponse.json({ success: true, sessionId, result, timestamp: new Date().toISOString() });

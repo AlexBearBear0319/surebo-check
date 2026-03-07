@@ -11,24 +11,25 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey);
 // ─── Chat Sessions ────────────────────────────────────────────────────────────
 // Schema: id (uuid), topic (text), created_at (timestamptz), updated_at (timestamptz)
 
-export async function sbCreateSession(topic = "New Chat"): Promise<string> {
+export async function sbCreateSession(topic = "New Chat", deviceId?: string): Promise<string> {
   const { data, error } = await supabase
     .from("chat_sessions")
-    .insert([{ topic }])
+    .insert([{ topic, device_id: deviceId ?? null }])
     .select("id")
     .single();
   if (error) throw error;
   return data.id as string;
 }
 
-export async function sbListSessions(): Promise<
-  Array<{ id: string; topic: string; created_at: string; updated_at: string }>
-> {
-  const { data, error } = await supabase
+export async function sbListSessions(
+  deviceId?: string,
+): Promise<Array<{ id: string; topic: string; created_at: string; updated_at: string }>> {
+  let q = supabase
     .from("chat_sessions")
     .select("id, topic, created_at, updated_at")
-    .eq("is_deleted", false)
-    .order("updated_at", { ascending: false });
+    .eq("is_deleted", false);
+  if (deviceId) q = q.eq("device_id", deviceId);
+  const { data, error } = await q.order("updated_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
 }

@@ -187,12 +187,28 @@ function sgDate() {
   return new Date().toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" });
 }
 
+// ─── Language helpers ────────────────────────────────────────────────────────────
+
+const LANG_NAMES: Record<string, string> = {
+  en: "English",
+  ms: "Bahasa Melayu",
+  zh: "Mandarin Chinese (中文)",
+  ta: "Tamil (தமிழ்)",
+};
+
+function langName(code?: string): string {
+  if (!code) return "English";
+  return LANG_NAMES[code.toLowerCase()] ?? code;
+}
+
 // ─── Detection Chain ──────────────────────────────────────────────────────────
 
 export interface DetectionInput {
   claim:              string;
   source_of_claim?:   string;
   original_language?: string;
+  /** ISO code of the language the user wants the output in (default: "en") */
+  output_language?:   string;
   session_id:         string;
 }
 
@@ -235,7 +251,6 @@ export async function runDetection(input: DetectionInput): Promise<DetectionResu
       original_language: input.original_language ?? "English",
       context,
       current_date:      sgDate(),
-      language:          "English",
       chat_history:      history,
     },
     { callbacks }
@@ -293,7 +308,6 @@ export async function runChat(input: ChatInput): Promise<string> {
       context:      () => context,
       current_date: () => sgDate(),
       chat_history: () => memVars["chat_history"] ?? [],
-      language:     () => input.language ?? "English",
     }),
     CHAT_PROMPT,
     llm(false, 700),
@@ -324,7 +338,6 @@ export async function* streamChat(input: ChatInput): AsyncGenerator<string> {
       context:      () => context,
       current_date: () => sgDate(),
       chat_history: () => memVars["chat_history"] ?? [],
-      language:     () => input.language ?? "English",
     }),
     CHAT_PROMPT,
     llm(true, 700),

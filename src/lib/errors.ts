@@ -34,7 +34,6 @@ export function safeError(err: unknown): string {
   if (msg.includes("rate limit") || msg.includes("429"))
     return "Too many requests. Please wait a moment and try again.";
 
-  // Generic fallback — never show raw stack traces
-  if (msg.length > 120) return "An unexpected error occurred. Please try again.";
-  return msg;
+  // Truncate very long messages — sensitive data is already stripped above
+  return msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
 }
