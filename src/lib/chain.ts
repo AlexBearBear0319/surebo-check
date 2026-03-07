@@ -52,12 +52,15 @@ function getTavily() {
 
 function llm(streaming = false) {
   return new ChatOpenAI({
-    modelName:    "gpt-4o",
-    temperature:  0.1,  // Very low for consistent, factual responses
-    maxTokens:    2000,  // Increased for more detailed analysis
+    modelName:    "qwen2.5-vl-72b-instruct",
+    temperature:  0.1,
+    maxTokens:    2000,
     streaming,
-    openAIApiKey: process.env.OPENAI_API_KEY,
-    topP:         0.9,  // Slightly reduced for more focused outputs
+    openAIApiKey: process.env.DASHSCOPE_API_KEY,
+    configuration: {
+      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+    topP:         0.9,
   });
 }
 
