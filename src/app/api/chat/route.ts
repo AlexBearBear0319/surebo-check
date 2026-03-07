@@ -13,8 +13,8 @@ export const maxDuration = 60;
  */
 export async function POST(req: NextRequest) {
   try {
-    const { message, sessionId = randomUUID(), stream = true, language = "en" } =
-      await req.json() as { message: string; sessionId?: string; stream?: boolean; language?: string };
+    const { message, sessionId = randomUUID(), stream = true, language = "en", isRetry = false } =
+      await req.json() as { message: string; sessionId?: string; stream?: boolean; language?: string; isRetry?: boolean };
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "message is required" }, { status: 400 });
@@ -23,9 +23,8 @@ export async function POST(req: NextRequest) {
     if (stream) {
       const enc = new TextEncoder();
 
-      // Persist the user message immediately so it survives a page refresh
-      // even while the AI is still generating.
-      await sbSaveMessage(sessionId, "user", message);
+      // On retry the user message row already exists in DB — don't duplicate it.
+      if (!isRetry) await sbSaveMessage(sessionId, "user", message);
 
       const body = new ReadableStream({
         async start(ctrl) {
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Non-streaming path: persist user message, run AI (memory.saveContext saves AI response)
-    await sbSaveMessage(sessionId, "user", message);
+    if (!isRetry) await sbSaveMessage(sessionId, "user", message);
     const response = await runChat({ message, session_id: sessionId, language });
     await sbBumpSession(sessionId);
     return NextResponse.json({ response, sessionId, timestamp: new Date().toISOString() });

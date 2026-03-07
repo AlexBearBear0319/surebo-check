@@ -190,7 +190,7 @@ export default function SureBOPage() {
 
   // ── Send chat message (streaming) ─────────────────────────────────────────
   const sendChatMessage = useCallback(
-    async (text: string, sessionIdOverride?: string) => {
+    async (text: string, sessionIdOverride?: string, isRetry = false) => {
       const effectiveSessionId = sessionIdOverride ?? activeSessionId;
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -222,6 +222,7 @@ export default function SureBOPage() {
             sessionId: effectiveSessionId,
             stream: true,
             language,
+            isRetry,
           }),
         });
 
@@ -872,7 +873,7 @@ export default function SureBOPage() {
                   if (prevUser) {
                     setMessages((prev) => prev.filter((m) => m.id !== msg.id));
                     if (mode === "detect") runDetection(prevUser.content);
-                    else sendChatMessage(prevUser.content);
+                    else sendChatMessage(prevUser.content, undefined, true);
                   }
                 } : undefined}
               />

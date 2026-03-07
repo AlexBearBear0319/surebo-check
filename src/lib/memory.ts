@@ -61,7 +61,8 @@ export class ClickHouseMemory extends BaseChatMemory {
 
     // Only persist the AI response — the user message is already written to DB
     // by the route handler before the AI chain is invoked.
-    sbSaveMessage(this.sessionId, "ai", aiText)
+    // Awaited so callers in chain.ts know the write is complete before sending `done`.
+    await sbSaveMessage(this.sessionId, "ai", aiText)
       .catch((err) => console.warn("[Memory] AI persist failed:", err));
   }
 
