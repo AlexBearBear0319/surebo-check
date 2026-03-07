@@ -1,6 +1,6 @@
 // ─── Detection Result Card ──────────────────────────────────────────────────────
 // Shown below an assistant message when a detection result is present.
-// Designer: edit the section headings, colours, and section visibility here.
+// Large text and high-contrast colors for elderly accessibility.
 
 "use client";
 
@@ -30,66 +30,85 @@ export function DetectionCard({ result }: DetectionCardProps) {
   return (
     <div
       style={{
-        marginTop: 12,
-        border: "1px solid",
+        marginTop: 14,
+        border: "1.5px solid",
         borderColor: cfg.border,
-        borderRadius: 12,
+        borderRadius: 18,
         overflow: "hidden",
         background: cfg.bg,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
       }}
     >
       {/* ── Verdict banner ── */}
       <div
         style={{
-          padding: "12px",
+          padding: "14px 16px",
           borderBottom: expanded ? `1px solid ${cfg.border}` : "none",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          gap: 12,
         }}
       >
         {/* Icon + label + confidence */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 6,
+              width: 40,
+              height: 40,
+              borderRadius: 12,
               background: cfg.color,
               color: "#ffffff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontWeight: 700,
-              fontSize: 16,
+              fontWeight: 800,
+              fontSize: 18,
+              flexShrink: 0,
+              boxShadow: `0 2px 6px ${cfg.color}55`,
             }}
           >
             {cfg.icon}
           </div>
           <div>
-            <p style={{ margin: 0, fontWeight: 700, color: cfg.color, fontSize: 16 }}>
+            <p
+              style={{
+                margin: 0,
+                fontWeight: 800,
+                color: cfg.color,
+                fontSize: 18,
+                letterSpacing: "0.01em",
+              }}
+            >
               {cfg.label}
             </p>
-            <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
-              {Math.round(result.confidence * 100)}% confidence ·{" "}
+            <p style={{ margin: 0, fontSize: 13, color: "#64748b", marginTop: 2 }}>
+              {Math.round(result.confidence * 100)}% confidence &middot;{" "}
               {result.processingTimeMs}ms
             </p>
           </div>
         </div>
 
-        {/* Feedback buttons + expand toggle */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* Feedback + expand */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           {result.traceId && (
             <>
               <button
                 onClick={() => submitFeedback(1)}
                 title="Helpful"
+                className="active:scale-95 transition-transform duration-150"
                 style={{
-                  fontSize: 14,
+                  width: 34,
+                  height: 34,
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
                   background: "transparent",
-                  border: "none",
                   cursor: feedback ? "default" : "pointer",
                   opacity: feedback && feedback !== "up" ? 0.3 : 1,
+                  fontSize: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   transition: "opacity 0.15s",
                 }}
               >
@@ -98,12 +117,19 @@ export function DetectionCard({ result }: DetectionCardProps) {
               <button
                 onClick={() => submitFeedback(0)}
                 title="Incorrect"
+                className="active:scale-95 transition-transform duration-150"
                 style={{
-                  fontSize: 14,
+                  width: 34,
+                  height: 34,
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
                   background: "transparent",
-                  border: "none",
                   cursor: feedback ? "default" : "pointer",
                   opacity: feedback && feedback !== "down" ? 0.3 : 1,
+                  fontSize: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   transition: "opacity 0.15s",
                 }}
               >
@@ -113,16 +139,20 @@ export function DetectionCard({ result }: DetectionCardProps) {
           )}
           <button
             onClick={() => setExpanded(!expanded)}
+            className="active:scale-95 transition-transform duration-150"
             style={{
-              fontSize: 12,
-              color: "#6b7280",
-              background: "transparent",
-              border: "none",
+              padding: "6px 12px",
+              borderRadius: 8,
+              border: "1px solid #e2e8f0",
+              background: "#ffffff",
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 600,
               cursor: "pointer",
-              fontWeight: 500,
+              fontFamily: "inherit",
             }}
           >
-            {expanded ? "Less" : "More"}
+            {expanded ? "Less" : "Details"}
           </button>
         </div>
       </div>
@@ -131,14 +161,21 @@ export function DetectionCard({ result }: DetectionCardProps) {
       {expanded && (
         <div
           style={{
-            padding: "12px",
+            padding: "16px",
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: 14,
           }}
         >
           {/* Explanation */}
-          <p style={{ margin: 0, fontSize: 16, color: "#1f2937", lineHeight: 1.8 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 17,
+              color: "#0f172a",
+              lineHeight: 1.8,
+            }}
+          >
             {result.explanation}
           </p>
 
@@ -148,14 +185,30 @@ export function DetectionCard({ result }: DetectionCardProps) {
               style={{
                 background: "#f0fdf4",
                 border: "1px solid #86efac",
-                borderRadius: 10,
-                padding: "14px",
+                borderRadius: 14,
+                padding: "16px",
               }}
             >
-              <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 700, color: "#15803d" }}>
-                📰 THE REAL STORY
+              <p
+                style={{
+                  margin: "0 0 8px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#15803d",
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                📰 The Real Story
               </p>
-              <p style={{ margin: 0, fontSize: 15, color: "#166534", lineHeight: 1.8 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 16,
+                  color: "#166534",
+                  lineHeight: 1.8,
+                }}
+              >
                 {result.true_story}
               </p>
             </div>
@@ -166,22 +219,24 @@ export function DetectionCard({ result }: DetectionCardProps) {
             <div>
               <p
                 style={{
-                  margin: "0 0 8px",
-                  fontSize: 14,
-                  fontWeight: 600,
+                  margin: "0 0 10px",
+                  fontSize: 13,
+                  fontWeight: 700,
                   color: "#ef4444",
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
                 }}
               >
-                🚩 RED FLAGS
+                🚩 Red Flags
               </p>
               {result.red_flags.map((f, i) => (
                 <p
                   key={i}
                   style={{
-                    margin: "0 0 6px",
-                    fontSize: 15,
-                    color: "#6b7280",
-                    paddingLeft: 12,
+                    margin: "0 0 8px",
+                    fontSize: 16,
+                    color: "#475569",
+                    paddingLeft: 16,
                     lineHeight: 1.7,
                   }}
                 >
@@ -196,22 +251,24 @@ export function DetectionCard({ result }: DetectionCardProps) {
             <div>
               <p
                 style={{
-                  margin: "0 0 8px",
-                  fontSize: 14,
-                  fontWeight: 600,
+                  margin: "0 0 10px",
+                  fontSize: 13,
+                  fontWeight: 700,
                   color: "#10b981",
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
                 }}
               >
-                ✓ EVIDENCE
+                ✓ Evidence
               </p>
               {result.supporting_evidence.map((ev, i) => (
                 <p
                   key={i}
                   style={{
-                    margin: "0 0 6px",
-                    fontSize: 15,
-                    color: "#6b7280",
-                    paddingLeft: 12,
+                    margin: "0 0 8px",
+                    fontSize: 16,
+                    color: "#475569",
+                    paddingLeft: 16,
                     lineHeight: 1.7,
                   }}
                 >
@@ -225,22 +282,32 @@ export function DetectionCard({ result }: DetectionCardProps) {
           {result.what_to_do && (
             <div
               style={{
-                background: "#fef3c7",
-                borderRadius: 8,
-                padding: "10px",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                borderRadius: 14,
+                padding: "16px",
               }}
             >
               <p
                 style={{
-                  margin: "0 0 4px",
-                  fontSize: 14,
-                  fontWeight: 600,
+                  margin: "0 0 8px",
+                  fontSize: 13,
+                  fontWeight: 700,
                   color: "#b45309",
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
                 }}
               >
-                💡 WHAT TO DO
+                💡 What To Do
               </p>
-              <p style={{ margin: 0, fontSize: 15, color: "#92400e", lineHeight: 1.8 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 16,
+                  color: "#78350f",
+                  lineHeight: 1.8,
+                }}
+              >
                 {result.what_to_do}
               </p>
             </div>
@@ -252,13 +319,15 @@ export function DetectionCard({ result }: DetectionCardProps) {
             <div>
               <p
                 style={{
-                  margin: "0 0 8px",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: "#6b7280",
+                  margin: "0 0 10px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#64748b",
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
                 }}
               >
-                🔗 SOURCES
+                🔗 Sources
               </p>
               {[
                 ...(result.trusted_sources ?? []),
@@ -273,9 +342,9 @@ export function DetectionCard({ result }: DetectionCardProps) {
                     rel="noopener noreferrer"
                     style={{
                       display: "block",
-                      fontSize: 14,
-                      color: "#0369a1",
-                      marginBottom: 6,
+                      fontSize: 15,
+                      color: "#2563eb",
+                      marginBottom: 8,
                       textDecoration: "none",
                       lineHeight: 1.6,
                     }}

@@ -589,13 +589,14 @@ const res = await apiFetch("/api/chat/new", {
       style={{
         minHeight: "100vh",
         background: "#ffffff",
-        fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
-        color: "#1f2937",
+        fontFamily:
+          "var(--font-geist-sans), system-ui, -apple-system, 'Segoe UI', sans-serif",
+        color: "#0f172a",
         display: "flex",
         flexDirection: "row",
       }}
     >
-      {/* Mobile overlay */}
+      {/* Mobile backdrop overlay */}
       {sidebarOpen && (
         <div
           className="mobile-overlay"
@@ -619,15 +620,14 @@ const res = await apiFetch("/api/chat/new", {
       />
 
       {/* ── Right column ── */}
-      <div
-        style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}
-      >
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+
         {/* ── Header ── */}
         <header
           className="mobile-header"
           style={{
-            borderBottom: "1px solid #e5e7eb",
-            padding: "12px 12px",
+            borderBottom: "1px solid #e2e8f0",
+            padding: "0 20px",
             height: 57,
             display: "flex",
             alignItems: "center",
@@ -639,19 +639,18 @@ const res = await apiFetch("/api/chat/new", {
             boxSizing: "border-box",
           }}
         >
-          {/* Logo + wordmark */}
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Mobile menu button */}
+            {/* Mobile hamburger */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="mobile-menu-btn"
+              className="mobile-menu-btn active:scale-95 transition-transform duration-150"
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 6,
+                width: 36,
+                height: 36,
+                borderRadius: 9,
                 background: "transparent",
-                border: "1px solid #e5e7eb",
-                color: "#6b7280",
+                border: "1px solid #e2e8f0",
+                color: "#64748b",
                 cursor: "pointer",
                 fontSize: 16,
                 display: "none",
@@ -663,25 +662,29 @@ const res = await apiFetch("/api/chat/new", {
               ☰
             </button>
 
+            {/* Logo mark */}
             <div
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
+                width: 34,
+                height: 34,
+                borderRadius: 10,
                 background: "linear-gradient(135deg, #dbeafe, #e9d5ff)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                boxShadow: "0 1px 4px rgba(99,102,241,0.2)",
               }}
             >
-              <span style={{ fontSize: 16 }}>🔍</span>
+              <span style={{ fontSize: 17 }}>🔍</span>
             </div>
+
             <h1
               style={{
-                fontSize: 18,
+                fontSize: 19,
                 fontWeight: 700,
                 margin: 0,
-                color: "#111827",
+                color: "#0f172a",
+                letterSpacing: "-0.01em",
               }}
             >
               SureBO
@@ -699,7 +702,7 @@ const res = await apiFetch("/api/chat/new", {
             maxWidth: 900,
             width: "100%",
             margin: "0 auto",
-            padding: "0 16px",
+            padding: "0 20px",
           }}
         >
           {/* ── Empty state ── */}
@@ -711,42 +714,45 @@ const res = await apiFetch("/api/chat/new", {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "60px 0 40px",
-                gap: 32,
+                padding: "64px 0 48px",
+                gap: 36,
               }}
             >
               <div style={{ textAlign: "center" }}>
                 <div
                   style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 16,
+                    width: 72,
+                    height: 72,
+                    borderRadius: 20,
                     background: "linear-gradient(135deg, #dbeafe, #e9d5ff)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    margin: "0 auto 20px",
-                    fontSize: 32,
+                    margin: "0 auto 24px",
+                    fontSize: 36,
+                    boxShadow: "0 4px 16px rgba(99,102,241,0.18)",
                   }}
                 >
                   🔍
                 </div>
                 <h2
                   style={{
-                    fontSize: 32,
-                    fontWeight: 700,
-                    color: "#111827",
-                    margin: "0 0 12px",
+                    fontSize: 34,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    margin: "0 0 14px",
+                    letterSpacing: "-0.02em",
+                    lineHeight: 1.2,
                   }}
                 >
                   {UI_STRINGS[language].emptyHeading}
                 </h2>
                 <p
                   style={{
-                    color: "#6b7280",
-                    fontSize: 16,
-                    maxWidth: 420,
-                    lineHeight: 1.6,
+                    color: "#64748b",
+                    fontSize: 18,
+                    maxWidth: 440,
+                    lineHeight: 1.65,
                     margin: "0 auto",
                   }}
                 >
@@ -756,61 +762,64 @@ const res = await apiFetch("/api/chat/new", {
 
               {/* Quick examples — only render once trending topics are loaded */}
               {trendingTopics.length > 0 && (
-              <div style={{ width: "100%", maxWidth: 600 }}>
-                <p
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#9ca3af",
-                    letterSpacing: "0.05em",
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  {UI_STRINGS[language].examplesLabel}
-                </p>
-                <div
-                  className="mobile-examples"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 12,
-                  }}
-                >
-                  {trendingTopics.map((ex) => (
-                    <button
-                      key={ex}
-                      onClick={() => {
-                        setInput(ex);
-                        inputRef.current?.focus();
-                      }}
-                      style={{
-                        background: "#f3f4f6",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 12,
-                        padding: "14px",
-                        textAlign: "left",
-                        color: "#374151",
-                        fontSize: 14,
-                        cursor: "pointer",
-                        transition: "all 0.2s",
-                        fontFamily: "inherit",
-                        lineHeight: 1.5,
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.target as HTMLElement).style.background = "#f3f4f6";
-                        (e.target as HTMLElement).style.borderColor = "#d1d5db";
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.target as HTMLElement).style.background = "#f3f4f6";
-                        (e.target as HTMLElement).style.borderColor = "#e5e7eb";
-                      }}
-                    >
-                      {ex}
-                    </button>
-                  ))}
+                <div style={{ width: "100%", maxWidth: 620 }}>
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#94a3b8",
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      marginBottom: 14,
+                      textAlign: "center",
+                    }}
+                  >
+                    {UI_STRINGS[language].examplesLabel}
+                  </p>
+                  <div
+                    className="mobile-examples"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
+                    }}
+                  >
+                    {trendingTopics.map((ex) => (
+                      <button
+                        key={ex}
+                        onClick={() => {
+                          setInput(ex);
+                          inputRef.current?.focus();
+                        }}
+                        className="active:scale-95 transition-transform duration-150"
+                        style={{
+                          background: "#f8fafc",
+                          border: "1.5px solid #e2e8f0",
+                          borderRadius: 14,
+                          padding: "16px 16px",
+                          textAlign: "left",
+                          color: "#334155",
+                          fontSize: 15,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          lineHeight: 1.55,
+                          fontWeight: 500,
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#93c5fd";
+                          (e.currentTarget as HTMLElement).style.background = "#f0f9ff";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#e2e8f0";
+                          (e.currentTarget as HTMLElement).style.background = "#f8fafc";
+                        }}
+                      >
+                        {ex}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
               )}
             </div>
           )}
@@ -820,24 +829,34 @@ const res = await apiFetch("/api/chat/new", {
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "24px 0",
+              padding: "28px 0",
               display: "flex",
               flexDirection: "column",
-              gap: 16,
+              gap: 20,
             }}
           >
             {messages.map((msg, idx) => (
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                onRetry={msg.hasFailed ? () => {
-                  const prevUser = messages.slice(0, idx).reverse().find((m) => m.role === "user");
-                  if (prevUser) {
-                    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
-                    if (mode === "detect") runDetection(prevUser.content);
-                    else sendChatMessage(prevUser.content, undefined, true);
-                  }
-                } : undefined}
+                onRetry={
+                  msg.hasFailed
+                    ? () => {
+                        const prevUser = messages
+                          .slice(0, idx)
+                          .reverse()
+                          .find((m) => m.role === "user");
+                        if (prevUser) {
+                          setMessages((prev) =>
+                            prev.filter((m) => m.id !== msg.id)
+                          );
+                          if (mode === "detect") runDetection(prevUser.content);
+                          else
+                            sendChatMessage(prevUser.content, undefined, true);
+                        }
+                      }
+                    : undefined
+                }
               />
             ))}
             <div ref={messagesEndRef} />
@@ -852,7 +871,10 @@ const res = await apiFetch("/api/chat/new", {
           language={language}
           onInputChange={setInput}
           onSubmit={handleSubmit}
-          onSubmitText={(text) => { setInput(text); handleSubmit(text); }}
+          onSubmitText={(text) => {
+            setInput(text);
+            handleSubmit(text);
+          }}
           onExtract={handleExtract}
           inputRef={inputRef}
         />
@@ -864,8 +886,9 @@ const res = await apiFetch("/api/chat/new", {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.4)",
-            backdropFilter: "blur(4px)",
+            background: "rgba(15,23,42,0.45)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -876,23 +899,32 @@ const res = await apiFetch("/api/chat/new", {
           <div
             style={{
               background: "#ffffff",
-              borderRadius: 16,
-              padding: 32,
+              borderRadius: 20,
+              padding: 36,
               width: "100%",
-              maxWidth: 520,
-              margin: "0 16px",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+              maxWidth: 540,
+              margin: "0 20px",
+              boxShadow:
+                "0 24px 64px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)",
               display: "flex",
               flexDirection: "column",
-              gap: 20,
+              gap: 22,
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <h2 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 700, color: "#111827" }}>
+              <h2
+                style={{
+                  margin: "0 0 8px",
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  letterSpacing: "-0.01em",
+                }}
+              >
                 {UI_STRINGS[language].newChatTitle}
               </h2>
-              <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
+              <p style={{ margin: 0, fontSize: 16, color: "#64748b" }}>
                 {UI_STRINGS[language].newChatSubtext}
               </p>
             </div>
@@ -902,22 +934,35 @@ const res = await apiFetch("/api/chat/new", {
               value={newChatInput}
               onChange={(e) => setNewChatInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewChat(); }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  submitNewChat();
+                }
                 if (e.key === "Escape") setShowNewChatModal(false);
               }}
               placeholder={UI_STRINGS[language].newChatPlaceholder}
               rows={3}
               style={{
                 width: "100%",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1.5px solid #e5e7eb",
-                fontSize: 15,
+                padding: "14px 16px",
+                borderRadius: 14,
+                border: "1.5px solid #e2e8f0",
+                fontSize: 16,
                 fontFamily: "inherit",
                 resize: "none",
                 outline: "none",
-                color: "#111827",
+                color: "#0f172a",
                 boxSizing: "border-box",
+                lineHeight: 1.6,
+                transition: "border-color 0.2s, box-shadow 0.2s",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "#93c5fd";
+                e.target.style.boxShadow = "0 0 0 3px rgba(147,197,253,0.25)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "#e2e8f0";
+                e.target.style.boxShadow = "none";
               }}
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
@@ -926,13 +971,14 @@ const res = await apiFetch("/api/chat/new", {
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button
                 onClick={() => setShowNewChatModal(false)}
+                className="active:scale-95 transition-transform duration-150"
                 style={{
-                  padding: "10px 20px",
-                  borderRadius: 8,
-                  border: "1px solid #e5e7eb",
-                  background: "#f9fafb",
+                  padding: "12px 22px",
+                  borderRadius: 11,
+                  border: "1.5px solid #e2e8f0",
+                  background: "#f8fafc",
                   color: "#374151",
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: 500,
                   cursor: "pointer",
                   fontFamily: "inherit",
@@ -943,17 +989,26 @@ const res = await apiFetch("/api/chat/new", {
               <button
                 onClick={submitNewChat}
                 disabled={!newChatInput.trim() || isLoading}
+                className="active:scale-95 transition-transform duration-150"
                 style={{
-                  padding: "10px 20px",
-                  borderRadius: 8,
+                  padding: "12px 24px",
+                  borderRadius: 11,
                   border: "none",
-                  background: newChatInput.trim() && !isLoading ? "#3b82f6" : "#bfdbfe",
+                  background:
+                    newChatInput.trim() && !isLoading
+                      ? "linear-gradient(135deg, #3b82f6, #2563eb)"
+                      : "#bfdbfe",
                   color: "#ffffff",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: newChatInput.trim() && !isLoading ? "pointer" : "not-allowed",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor:
+                    newChatInput.trim() && !isLoading ? "pointer" : "not-allowed",
                   fontFamily: "inherit",
-                  transition: "background 0.2s",
+                  boxShadow:
+                    newChatInput.trim() && !isLoading
+                      ? "0 2px 8px rgba(37,99,235,0.35)"
+                      : "none",
+                  transition: "background 0.2s, box-shadow 0.2s",
                 }}
               >
                 {UI_STRINGS[language].startBtn}

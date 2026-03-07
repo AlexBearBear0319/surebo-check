@@ -1,13 +1,12 @@
 // ─── Session Sidebar ────────────────────────────────────────────────────────────
 // Left-hand navigation: session list, new-chat button, collapse/expand toggle.
-// Designer: adjust widths, colours, and typography via the inline styles below.
+// Desktop: sticky sidebar that collapses to an icon strip.
+// Mobile: fixed slide-over drawer triggered by the hamburger in the header.
 
 "use client";
 
 import { useState, useEffect } from "react";
 import type { SessionMeta } from "@/types";
-
-// ── Sidebar container ──────────────────────────────────────────────────────────
 
 interface SessionSidebarProps {
   open: boolean;
@@ -71,23 +70,23 @@ export function SessionSidebar({
 
   return (
     <div
-      className={`mobile-sidebar ${!open ? 'collapsed' : ''}`}
+      className={`mobile-sidebar${!open ? " collapsed" : ""}`}
       style={{
         width: sidebarW,
         minWidth: sidebarW,
         height: "100vh",
-        background: "#ffffff",
-        borderRight: "1px solid #e5e7eb",
+        background: "#f8fafc",
+        borderRight: "1px solid #e2e8f0",
         display: "flex",
         flexDirection: "column",
-        transition: "width 0.2s ease, transform 0.3s ease",
+        transition: "width 0.25s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         overflow: "hidden",
         position: "sticky",
         top: 0,
         flexShrink: 0,
       }}
     >
-      {/* ── Toggle + New Chat ── */}
+      {/* ── Top bar: New Chat + Toggle ── */}
       <div
         style={{
           display: "flex",
@@ -95,51 +94,54 @@ export function SessionSidebar({
           padding: "12px",
           height: 57,
           gap: 8,
-          borderBottom: "1px solid #e5e7eb",
+          borderBottom: "1px solid #e2e8f0",
           justifyContent: open ? "space-between" : "center",
           boxSizing: "border-box",
+          background: "#f8fafc",
         }}
       >
         {open && (
           <button
             onClick={onNewChat}
             disabled={newChatDisabled}
-            title={newChatDisabled ? "Finish your current new chat first" : "New chat"}
+            className="active:scale-95 transition-transform duration-150"
             style={{
               flex: 1,
-              padding: "8px 12px",
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 500,
-              background: newChatDisabled ? "#f3f4f6" : "#f0f9ff",
-              border: `1px solid ${newChatDisabled ? "#e5e7eb" : "#bfdbfe"}`,
-              color: newChatDisabled ? "#9ca3af" : "#0369a1",
+              padding: "9px 14px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              background: newChatDisabled ? "#f1f5f9" : "#2563eb",
+              border: "none",
+              color: newChatDisabled ? "#94a3b8" : "#ffffff",
               cursor: newChatDisabled ? "not-allowed" : "pointer",
               fontFamily: "inherit",
-              transition: "all 0.2s",
+              transition: "background 0.2s",
+              boxShadow: newChatDisabled ? "none" : "0 1px 4px rgba(37,99,235,0.3)",
             }}
           >
-            + New
+            + New Chat
           </button>
         )}
 
         <button
           onClick={onToggle}
+          className="active:scale-95 transition-transform duration-150"
           title={open ? "Collapse sidebar" : "Expand sidebar"}
           style={{
             width: 32,
             height: 32,
             borderRadius: 8,
             flexShrink: 0,
-            background: "#f3f4f6",
-            border: "1px solid #e5e7eb",
-            color: "#6b7280",
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            color: "#64748b",
             cursor: "pointer",
-            fontSize: 14,
+            fontSize: 12,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            transition: "all 0.2s",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
           }}
         >
           {open ? "◀" : "▶"}
@@ -150,7 +152,14 @@ export function SessionSidebar({
       {open && (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 8px" }}>
           {loading && (
-            <p style={{ fontSize: 12, color: "#d1d5db", textAlign: "center", marginTop: 32 }}>
+            <p
+              style={{
+                fontSize: 13,
+                color: "#cbd5e1",
+                textAlign: "center",
+                marginTop: 40,
+              }}
+            >
               Loading…
             </p>
           )}
@@ -158,40 +167,42 @@ export function SessionSidebar({
           {!loading && sessions.length > 0 && (
             <p
               style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "#9ca3af",
-                letterSpacing: "0.05em",
-                padding: "8px",
-                margin: "0 0 8px",
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#94a3b8",
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                padding: "4px 10px",
+                margin: "0 0 6px",
               }}
             >
-              HISTORY
+              History
             </p>
           )}
 
-          {!loading && sessions.map((s) => (
-            <SidebarSession
-              key={s.id}
-              session={s}
-              active={s.id === activeSessionId}
-              renamingId={renamingId}
-              renameVal={renameVal}
-              setRenameVal={setRenameVal}
-              onSelect={() => onSwitch(s.id)}
-              onContextMenu={(e) => openContextMenu(e, s.id)}
-              onCommitRename={() => commitRename(s.id)}
-              onCancelRename={() => setRenamingId(null)}
-            />
-          ))}
+          {!loading &&
+            sessions.map((s) => (
+              <SidebarSession
+                key={s.id}
+                session={s}
+                active={s.id === activeSessionId}
+                renamingId={renamingId}
+                renameVal={renameVal}
+                setRenameVal={setRenameVal}
+                onSelect={() => onSwitch(s.id)}
+                onContextMenu={(e) => openContextMenu(e, s.id)}
+                onCommitRename={() => commitRename(s.id)}
+                onCancelRename={() => setRenamingId(null)}
+              />
+            ))}
 
           {!loading && sessions.length === 0 && (
             <p
               style={{
-                fontSize: 12,
-                color: "#d1d5db",
+                fontSize: 13,
+                color: "#cbd5e1",
                 textAlign: "center",
-                marginTop: 32,
+                marginTop: 48,
               }}
             >
               No chats yet
@@ -207,13 +218,13 @@ export function SessionSidebar({
           style={{
             position: "fixed",
             zIndex: 200,
-            left: Math.min(contextMenu.x, window.innerWidth - 140),
-            top: Math.min(contextMenu.y, window.innerHeight - 100),
+            left: Math.min(contextMenu.x, window.innerWidth - 160),
+            top: Math.min(contextMenu.y, window.innerHeight - 110),
             background: "#ffffff",
-            border: "1px solid #e5e7eb",
+            border: "1px solid #e2e8f0",
             borderRadius: 12,
             overflow: "hidden",
-            boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06)",
           }}
         >
           <CtxItem
@@ -265,17 +276,17 @@ function SidebarSession({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       style={{
-        padding: "8px",
-        borderRadius: 8,
+        padding: "10px 10px",
+        borderRadius: 10,
         cursor: "pointer",
         background: active ? "#eff6ff" : "transparent",
         border: `1px solid ${active ? "#bfdbfe" : "transparent"}`,
-        marginBottom: 4,
-        transition: "all 0.2s",
+        marginBottom: 3,
+        transition: "background 0.15s, border-color 0.15s",
       }}
       onMouseEnter={(e) => {
         if (!active)
-          (e.currentTarget as HTMLElement).style.background = "#f9fafb";
+          (e.currentTarget as HTMLElement).style.background = "#f1f5f9";
       }}
       onMouseLeave={(e) => {
         if (!active)
@@ -296,12 +307,12 @@ function SidebarSession({
           onClick={(e) => e.stopPropagation()}
           style={{
             width: "100%",
-            background: "#f3f4f6",
-            border: "1px solid #d1d5db",
+            background: "#f1f5f9",
+            border: "1px solid #cbd5e1",
             borderRadius: 6,
-            padding: "6px",
-            color: "#1f2937",
-            fontSize: 13,
+            padding: "6px 8px",
+            color: "#0f172a",
+            fontSize: 14,
             outline: "none",
             fontFamily: "inherit",
           }}
@@ -310,12 +321,13 @@ function SidebarSession({
         <p
           style={{
             margin: 0,
-            fontSize: 13,
-            fontWeight: 500,
-            color: active ? "#0369a1" : "#374151",
+            fontSize: 14,
+            fontWeight: active ? 600 : 500,
+            color: active ? "#1d4ed8" : "#374151",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
+            lineHeight: 1.5,
           }}
         >
           {session.name}
@@ -339,21 +351,23 @@ function CtxItem({
   return (
     <button
       onClick={onClick}
+      className="active:scale-95 transition-transform duration-100"
       style={{
         display: "block",
         width: "100%",
         textAlign: "left",
-        padding: "10px 12px",
+        padding: "11px 16px",
         border: "none",
         background: "transparent",
         cursor: "pointer",
         color: danger ? "#ef4444" : "#374151",
-        fontSize: 13,
+        fontSize: 14,
         fontFamily: "inherit",
         fontWeight: 500,
+        minWidth: 140,
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.background = "#f9fafb";
+        (e.currentTarget as HTMLElement).style.background = "#f8fafc";
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLElement).style.background = "transparent";

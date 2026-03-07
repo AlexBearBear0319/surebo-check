@@ -1,6 +1,6 @@
 // ─── Message Bubble ─────────────────────────────────────────────────────────────
 // Renders a single chat turn (user or assistant).
-// Designer: edit bubble colours, avatar style, and timestamp format here.
+// AI bubbles fade-in + slide-up via the animate-message-in utility.
 
 "use client";
 
@@ -19,14 +19,19 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
 
   const handleCopy = () => {
     if (!message.content) return;
-    navigator.clipboard.writeText(message.content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
+    navigator.clipboard
+      .writeText(message.content)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   };
 
   return (
+    // AI messages animate in; user messages appear immediately
     <div
+      className={!isUser ? "animate-message-in" : ""}
       style={{
         display: "flex",
         flexDirection: isUser ? "row-reverse" : "row",
@@ -38,18 +43,21 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
       {/* ── Avatar ── */}
       <div
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
+          width: 36,
+          height: 36,
+          borderRadius: 10,
           flexShrink: 0,
-          background: isUser ? "#dbeafe" : "#f3f4f6",
+          background: isUser
+            ? "linear-gradient(135deg, #dbeafe, #bfdbfe)"
+            : "linear-gradient(135deg, #f1f5f9, #e2e8f0)",
           border: "1px solid",
-          borderColor: isUser ? "#bfdbfe" : "#e5e7eb",
+          borderColor: isUser ? "#93c5fd" : "#e2e8f0",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: 16,
-          marginTop: 4,
+          marginTop: 2,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.07)",
         }}
       >
         {isUser ? "👤" : "🔍"}
@@ -59,42 +67,44 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
         {/* ── Speech bubble ── */}
         <div
           style={{
-            background: message.hasFailed ? "#fff1f2" : isUser ? "#eff6ff" : "#f9fafb",
+            background: message.hasFailed
+              ? "#fff1f2"
+              : isUser
+              ? "#eff6ff"
+              : "#ffffff",
             border: "1px solid",
-            borderColor: message.hasFailed ? "#fecdd3" : isUser ? "#bfdbfe" : "#e5e7eb",
-            borderRadius: "12px",
-            padding: "12px 14px",
+            borderColor: message.hasFailed
+              ? "#fecdd3"
+              : isUser
+              ? "#bfdbfe"
+              : "#e2e8f0",
+            borderRadius: 18,
+            padding: "14px 18px",
             maxWidth: "85%",
             marginLeft: isUser ? "auto" : 0,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
           }}
         >
           {message.hasFailed ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 16 }}>⚠️</span>
-              <span style={{ color: "#dc2626", fontSize: 14, fontWeight: 500 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <span style={{ color: "#dc2626", fontSize: 16, fontWeight: 500 }}>
                 Analysis failed — response not received.
               </span>
             </div>
           ) : message.isStreaming && !message.content ? (
-            /* Typing indicator – three pulsing dots */
-            <div
-              style={{
-                display: "flex",
-                gap: 4,
-                alignItems: "center",
-                height: 20,
-              }}
-            >
+            /* Typing indicator — three pulsing dots */
+            <div style={{ display: "flex", gap: 5, alignItems: "center", height: 22 }}>
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
                   style={{
-                    width: 6,
-                    height: 6,
+                    width: 7,
+                    height: 7,
                     borderRadius: "50%",
                     background: "#3b82f6",
-                    opacity: 0.6,
-                    animation: `pulse 1s ease-in-out ${i * 0.15}s infinite`,
+                    opacity: 0.5,
+                    animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
                   }}
                 />
               ))}
@@ -105,31 +115,30 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                 margin: 0,
                 fontSize: 17,
                 lineHeight: 1.8,
-                color: "#1f2937",
+                color: "#0f172a",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}
             >
               {message.content}
               {message.isStreaming && (
-                <span style={{ opacity: 0.5 }}>▌</span>
+                <span style={{ opacity: 0.4 }}>▌</span>
               )}
             </p>
           )}
         </div>
 
         {/* ── Detection result card (detect mode only) ── */}
-        {message.detection && (
-          <DetectionCard result={message.detection} />
-        )}
+        {message.detection && <DetectionCard result={message.detection} />}
 
         {/* ── Timestamp ── */}
         <p
           style={{
             fontSize: 11,
-            color: "#9ca3af",
-            marginTop: 6,
+            color: "#94a3b8",
+            marginTop: 5,
             textAlign: isUser ? "right" : "left",
+            letterSpacing: "0.01em",
           }}
         >
           {message.timestamp.toLocaleTimeString("en-SG", {
@@ -143,48 +152,54 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
           <div
             style={{
               display: "flex",
-              gap: 4,
+              gap: 6,
               marginTop: 2,
               justifyContent: isUser ? "flex-end" : "flex-start",
             }}
           >
-            {/* Copy button — only if there's content */}
             {message.content && (
               <button
                 onClick={handleCopy}
                 title="Copy"
+                className="active:scale-95 transition-transform duration-150"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 4,
-                  padding: "4px 8px",
-                  borderRadius: 6,
-                  border: "1px solid #e5e7eb",
+                  padding: "5px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
                   background: "transparent",
-                  color: "#9ca3af",
+                  color: "#94a3b8",
                   fontSize: 12,
                   cursor: "pointer",
                   fontFamily: "inherit",
-                  transition: "all 0.15s",
+                  transition: "color 0.15s, background 0.15s",
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#6b7280"; (e.currentTarget as HTMLElement).style.background = "#f3f4f6"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#9ca3af"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.color = "#64748b";
+                  (e.currentTarget as HTMLElement).style.background = "#f8fafc";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.color = "#94a3b8";
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
               >
                 {copied ? "✓ Copied" : "⎘ Copy"}
               </button>
             )}
 
-            {/* Retry button — only on failed AI messages */}
             {onRetry && (
               <button
                 onClick={onRetry}
                 title="Retry"
+                className="active:scale-95 transition-transform duration-150"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 4,
-                  padding: "4px 8px",
-                  borderRadius: 6,
+                  padding: "5px 10px",
+                  borderRadius: 8,
                   border: "1px solid #fca5a5",
                   background: "transparent",
                   color: "#dc2626",
@@ -192,10 +207,14 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                   fontWeight: 500,
                   cursor: "pointer",
                   fontFamily: "inherit",
-                  transition: "all 0.15s",
+                  transition: "background 0.15s",
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#fff1f2"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "#fff1f2";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
               >
                 ↺ Retry
               </button>
