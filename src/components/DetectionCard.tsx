@@ -67,10 +67,10 @@ export function DetectionCard({ result }: DetectionCardProps) {
             {cfg.icon}
           </div>
           <div>
-            <p style={{ margin: 0, fontWeight: 700, color: cfg.color, fontSize: 13 }}>
+            <p style={{ margin: 0, fontWeight: 700, color: cfg.color, fontSize: 16 }}>
               {cfg.label}
             </p>
-            <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+            <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
               {Math.round(result.confidence * 100)}% confidence ·{" "}
               {result.processingTimeMs}ms
             </p>
@@ -138,9 +138,28 @@ export function DetectionCard({ result }: DetectionCardProps) {
           }}
         >
           {/* Explanation */}
-          <p style={{ margin: 0, fontSize: 14, color: "#1f2937", lineHeight: 1.6 }}>
+          <p style={{ margin: 0, fontSize: 16, color: "#1f2937", lineHeight: 1.8 }}>
             {result.explanation}
           </p>
+
+          {/* True story */}
+          {result.true_story && (
+            <div
+              style={{
+                background: "#f0fdf4",
+                border: "1px solid #86efac",
+                borderRadius: 10,
+                padding: "14px",
+              }}
+            >
+              <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 700, color: "#15803d" }}>
+                📰 THE REAL STORY
+              </p>
+              <p style={{ margin: 0, fontSize: 15, color: "#166534", lineHeight: 1.8 }}>
+                {result.true_story}
+              </p>
+            </div>
+          )}
 
           {/* Red flags */}
           {result.red_flags?.length > 0 && (
@@ -148,7 +167,7 @@ export function DetectionCard({ result }: DetectionCardProps) {
               <p
                 style={{
                   margin: "0 0 8px",
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 600,
                   color: "#ef4444",
                 }}
@@ -159,10 +178,11 @@ export function DetectionCard({ result }: DetectionCardProps) {
                 <p
                   key={i}
                   style={{
-                    margin: "0 0 4px",
-                    fontSize: 13,
+                    margin: "0 0 6px",
+                    fontSize: 15,
                     color: "#6b7280",
                     paddingLeft: 12,
+                    lineHeight: 1.7,
                   }}
                 >
                   • {f}
@@ -177,7 +197,7 @@ export function DetectionCard({ result }: DetectionCardProps) {
               <p
                 style={{
                   margin: "0 0 8px",
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 600,
                   color: "#10b981",
                 }}
@@ -188,10 +208,11 @@ export function DetectionCard({ result }: DetectionCardProps) {
                 <p
                   key={i}
                   style={{
-                    margin: "0 0 4px",
-                    fontSize: 13,
+                    margin: "0 0 6px",
+                    fontSize: 15,
                     color: "#6b7280",
                     paddingLeft: 12,
+                    lineHeight: 1.7,
                   }}
                 >
                   • {ev}
@@ -212,14 +233,14 @@ export function DetectionCard({ result }: DetectionCardProps) {
               <p
                 style={{
                   margin: "0 0 4px",
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 600,
                   color: "#b45309",
                 }}
               >
                 💡 WHAT TO DO
               </p>
-              <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
+              <p style={{ margin: 0, fontSize: 15, color: "#92400e", lineHeight: 1.8 }}>
                 {result.what_to_do}
               </p>
             </div>
@@ -232,7 +253,7 @@ export function DetectionCard({ result }: DetectionCardProps) {
               <p
                 style={{
                   margin: "0 0 8px",
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 600,
                   color: "#6b7280",
                 }}
@@ -252,10 +273,11 @@ export function DetectionCard({ result }: DetectionCardProps) {
                     rel="noopener noreferrer"
                     style={{
                       display: "block",
-                      fontSize: 12,
+                      fontSize: 14,
                       color: "#0369a1",
-                      marginBottom: 4,
+                      marginBottom: 6,
                       textDecoration: "none",
+                      lineHeight: 1.6,
                     }}
                     onMouseEnter={(e) => {
                       (e.target as HTMLElement).style.textDecoration = "underline";

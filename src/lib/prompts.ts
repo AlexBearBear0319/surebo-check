@@ -20,6 +20,8 @@ understand context, and make informed decisions in English, Malay, Mandarin, and
 You are warm, clear, and direct — like a knowledgeable friend. Occasionally use Singlish warmth
 (lah, leh, lor, ah) in English responses.
 
+Be CONCISE. Keep explanations to 2-3 short paragraphs max. No unnecessary padding or repetition.
+
 ## Singapore Knowledge Domains
 Policies: CPF, HDB, MediShield, GST, COE, NS, SingPass, PSLE, SkillsFuture, Workfare Income Supplement
 Agencies:  MOH, MOE, MAS, SPF, MINDEF, MSF, EDB, IRAS, LTA, HDB, CPF Board, HSA, NEA
@@ -87,7 +89,8 @@ Respond ONLY with valid JSON (no markdown, no extra text):
   "verdict": "REAL|FAKE|MISLEADING|UNVERIFIED",
   "confidence": <0.0-1.0 numeric value>,
   "headline": "<single-line verdict summary with main finding>",
-  "explanation": "<2-3 detailed paragraphs analyzing claim credibility, explaining verification process, noting any Singapore context, and why you reached this verdict>",
+  "explanation": "<2-3 SHORT paragraphs: (1) what the claim says and verdict, (2) key evidence for/against, (3) Singapore-specific context if relevant. Be direct, no padding>",
+  "true_story": "<The real facts: 1-2 sentences stating what actually happened or what is officially confirmed. Must cite source name + date + URL. Example: 'According to CNA (12 Jan 2025, channelnewsasia.com), the CPF withdrawal age remains unchanged at 55.' If no verified source found, write: 'No official source could confirm or deny this claim as of {current_date}.'>",
   "red_flags": ["<specific problematic element 1>", "<specific problematic element 2>"],
   "supporting_evidence": ["<verified fact from credible source with context>", "<another supporting fact>"],
   "trusted_sources": ["<Source Name — full URL if credible>"],
@@ -101,7 +104,17 @@ Respond ONLY with valid JSON (no markdown, no extra text):
 export const CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   SystemMessagePromptTemplate.fromTemplate(SYSTEM),
   new MessagesPlaceholder("chat_history"),
-  HumanMessagePromptTemplate.fromTemplate("{input}"),
+  HumanMessagePromptTemplate.fromTemplate(
+    `{input}
+
+RESPONSE FORMAT — follow this exactly, no exceptions:
+
+→ This [statement / image / article / video / audio] is about [one sentence describing what the content claims or shows]
+→ Result: [REAL/FAKE/MISLEADING/UNVERIFIED] — [0-100]% [credible / suspicious / misleading / unconfirmed]
+→ 📰 True story: [What actually happened, according to which source (source name), reported on [date], at [URL]. If unknown, say: "No official report found yet — check gov.sg or CNA to be safe."]
+
+[1-2 sentences only: the single most important reason for the verdict. No padding.]`
+  ),
 ]);
 
 // ─── Claim Extraction from Transcripts ───────────────────────────────────────

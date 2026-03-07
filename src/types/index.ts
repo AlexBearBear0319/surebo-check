@@ -19,6 +19,7 @@ export interface DetectionResult {
   trusted_sources: string[];
   what_to_do: string;
   related_official_links: string[];
+  true_story?: string;
   detectedLanguage: string;
   wasTranslated: boolean;
   processingTimeMs: number;

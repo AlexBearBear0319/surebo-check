@@ -30,6 +30,7 @@ const DetectionSchema = z.object({
   trusted_sources:        z.array(z.string()).default([]),
   what_to_do:             z.string(),
   related_official_links: z.array(z.string()).default([]),
+  true_story:             z.string().optional(),
 });
 
 const ClaimSchema = z.array(z.object({
@@ -50,15 +51,15 @@ function getTavily() {
 
 // ─── LLM Factory ─────────────────────────────────────────────────────────────
 
-function llm(streaming = false) {
+function llm(streaming = false, maxTokens = 2000) {
   return new ChatOpenAI({
     modelName:    "qwen2.5-vl-72b-instruct",
     temperature:  0.1,
-    maxTokens:    2000,
+    maxTokens,
     streaming,
     openAIApiKey: process.env.DASHSCOPE_API_KEY,
     configuration: {
-      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     },
     topP:         0.9,
   });
@@ -233,7 +234,7 @@ export async function runChat(input: ChatInput): Promise<string> {
       language:     () => input.language ?? "English",
     }),
     CHAT_PROMPT,
-    llm(false),
+    llm(false, 700),
     new StringOutputParser(),
   ]);
 
@@ -264,7 +265,7 @@ export async function* streamChat(input: ChatInput): AsyncGenerator<string> {
       language:     () => input.language ?? "English",
     }),
     CHAT_PROMPT,
-    llm(true),
+    llm(true, 700),
     new StringOutputParser(),
   ]);
 

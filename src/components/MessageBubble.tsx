@@ -103,8 +103,8 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
             <p
               style={{
                 margin: 0,
-                fontSize: 15,
-                lineHeight: 1.6,
+                fontSize: 17,
+                lineHeight: 1.8,
                 color: "#1f2937",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
