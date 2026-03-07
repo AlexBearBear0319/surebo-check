@@ -67,6 +67,7 @@ export function SessionSidebar({
 
   return (
     <div
+      className={`mobile-sidebar ${!open ? 'collapsed' : ''}`}
       style={{
         width: sidebarW,
         minWidth: sidebarW,
@@ -75,7 +76,7 @@ export function SessionSidebar({
         borderRight: "1px solid #e5e7eb",
         display: "flex",
         flexDirection: "column",
-        transition: "width 0.2s ease",
+        transition: "width 0.2s ease, transform 0.3s ease",
         overflow: "hidden",
         position: "sticky",
         top: 0,
@@ -88,10 +89,33 @@ export function SessionSidebar({
           display: "flex",
           alignItems: "center",
           padding: "12px",
+          height: 57,
           gap: 8,
           borderBottom: "1px solid #e5e7eb",
+          justifyContent: open ? "space-between" : "center",
+          boxSizing: "border-box",
         }}
       >
+        {open && (
+          <button
+            onClick={onNewChat}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              background: "#f0f9ff",
+              border: "1px solid #bfdbfe",
+              color: "#0369a1",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            + New
+          </button>
+        )}
+
         <button
           onClick={onToggle}
           title={open ? "Collapse sidebar" : "Expand sidebar"}
@@ -113,26 +137,6 @@ export function SessionSidebar({
         >
           {open ? "◀" : "▶"}
         </button>
-
-        {open && (
-          <button
-            onClick={onNewChat}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 500,
-              background: "#f0f9ff",
-              border: "1px solid #bfdbfe",
-              color: "#0369a1",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            + New
-          </button>
-        )}
       </div>
 
       {/* ── Session list ── */}

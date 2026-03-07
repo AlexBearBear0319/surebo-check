@@ -31,12 +31,34 @@ export default function SureBOPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [language, setLanguage] = useState<Language>("en");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
 
   // ── Session store ──────────────────────────────────────────────────────────
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [activeSessionId, setActiveSessionIdState] = useState<string>(() =>
     newSessionId()
   );
+
+  // Auto-collapse sidebar on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) {
+        setSidebarOpen(false);
+      }
+    };
+    handleResize(); // Check on mount
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Close language dropdown when clicking outside
+  useEffect(() => {
+    const handler = () => setLanguageDropdownOpen(false);
+    if (languageDropdownOpen) {
+      document.addEventListener("click", handler);
+      return () => document.removeEventListener("click", handler);
+    }
+  }, [languageDropdownOpen]);
 
   useEffect(() => {
     setSessions(lsGet<SessionMeta[]>(LS_SESSIONS, []));
@@ -75,6 +97,10 @@ export default function SureBOPage() {
     setActiveSessionIdState(id);
     setMessages(loadMsgs(id));
     setInput("");
+    // Close sidebar on mobile after switching
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(false);
+    }
   }, []);
 
   const renameSession = useCallback((id: string, name: string) => {
@@ -373,6 +399,15 @@ export default function SureBOPage() {
         flexDirection: "row",
       }}
     >
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="mobile-overlay"
+          onClick={() => setSidebarOpen(false)}
+          style={{ display: "none" }}
+        />
+      )}
+
       {/* ── Sidebar ── */}
       <SessionSidebar
         open={sidebarOpen}
@@ -391,9 +426,11 @@ export default function SureBOPage() {
       >
         {/* ── Header ── */}
         <header
+          className="mobile-header"
           style={{
             borderBottom: "1px solid #e5e7eb",
-            padding: "12px 24px",
+            padding: "12px 12px",
+            height: 57,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -401,22 +438,45 @@ export default function SureBOPage() {
             position: "sticky",
             top: 0,
             zIndex: 50,
+            boxSizing: "border-box",
           }}
         >
           {/* Logo + wordmark */}
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="mobile-menu-btn"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                background: "transparent",
+                border: "1px solid #e5e7eb",
+                color: "#6b7280",
+                cursor: "pointer",
+                fontSize: 16,
+                display: "none",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+              }}
+            >
+              ☰
+            </button>
+
             <div
               style={{
                 width: 32,
                 height: 32,
                 borderRadius: 8,
-                background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+                background: "linear-gradient(135deg, #dbeafe, #e9d5ff)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <span style={{ fontSize: 16, color: "white" }}>🔍</span>
+              <span style={{ fontSize: 16 }}>🔍</span>
             </div>
             <h1
               style={{
@@ -430,69 +490,91 @@ export default function SureBOPage() {
             </h1>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Language picker */}
-            <div style={{ display: "flex", gap: 6 }}>
-              {(Object.keys(LANGUAGE_LABELS) as Language[]).map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => setLanguage(lang)}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: 12,
-                    fontWeight: 500,
-                    borderRadius: 6,
-                    border: "1px solid",
-                    borderColor: language === lang ? "#3b82f6" : "#e5e7eb",
-                    background: language === lang ? "#eff6ff" : "#ffffff",
-                    color: language === lang ? "#3b82f6" : "#6b7280",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {lang.toUpperCase()}
-                </button>
-              ))}
-            </div>
-
-            {/* Mode toggle */}
-            <div
+          {/* Language picker dropdown */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLanguageDropdownOpen((v) => !v);
+              }}
               style={{
-                display: "flex",
-                background: "#f3f4f6",
-                borderRadius: 8,
-                padding: 2,
+                padding: "6px 12px",
+                fontSize: 12,
+                fontWeight: 500,
+                borderRadius: 6,
                 border: "1px solid #e5e7eb",
+                background: "#ffffff",
+                color: "#374151",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                transition: "all 0.2s",
               }}
             >
-              {(["chat", "detect"] as Mode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  style={{
-                    padding: "6px 14px",
-                    fontSize: 12,
-                    fontWeight: 500,
-                    borderRadius: 6,
-                    background: mode === m ? "#ffffff" : "transparent",
-                    color: mode === m ? "#111827" : "#6b7280",
-                    border: "none",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    fontFamily: "inherit",
-                    boxShadow:
-                      mode === m ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
-                  }}
-                >
-                  {m === "chat" ? "💬 Chat" : "🔎 Detect"}
-                </button>
-              ))}
-            </div>
+              🌐 {LANGUAGE_LABELS[language]}
+              <span style={{ fontSize: 10 }}>▼</span>
+            </button>
+
+            {/* Dropdown menu */}
+            {languageDropdownOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 4px)",
+                  background: "#ffffff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                  minWidth: 140,
+                  zIndex: 1000,
+                  overflow: "hidden",
+                }}
+              >
+                {(Object.keys(LANGUAGE_LABELS) as Language[]).map((lang) => (
+                  <button
+                    key={lang}
+                    onClick={() => {
+                      setLanguage(lang);
+                      setLanguageDropdownOpen(false);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      fontSize: 13,
+                      fontWeight: language === lang ? 600 : 400,
+                      border: "none",
+                      background: language === lang ? "#eff6ff" : "transparent",
+                      color: language === lang ? "#3b82f6" : "#374151",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s",
+                      fontFamily: "inherit",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (language !== lang) {
+                        (e.currentTarget as HTMLElement).style.background = "#f9fafb";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (language !== lang) {
+                        (e.currentTarget as HTMLElement).style.background = "transparent";
+                      }
+                    }}
+                  >
+                    {LANGUAGE_LABELS[lang]}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </header>
 
         {/* ── Main content ── */}
         <main
+          className="mobile-content"
           style={{
             flex: 1,
             display: "flex",
@@ -500,7 +582,7 @@ export default function SureBOPage() {
             maxWidth: 900,
             width: "100%",
             margin: "0 auto",
-            padding: "0 24px",
+            padding: "0 16px",
           }}
         >
           {/* ── Empty state ── */}
@@ -571,6 +653,7 @@ export default function SureBOPage() {
                   EXAMPLES
                 </p>
                 <div
+                  className="mobile-examples"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
@@ -585,7 +668,7 @@ export default function SureBOPage() {
                         inputRef.current?.focus();
                       }}
                       style={{
-                        background: "#f9fafb",
+                        background: "#f3f4f6",
                         border: "1px solid #e5e7eb",
                         borderRadius: 12,
                         padding: "14px",
@@ -602,7 +685,7 @@ export default function SureBOPage() {
                         (e.target as HTMLElement).style.borderColor = "#d1d5db";
                       }}
                       onMouseLeave={(e) => {
-                        (e.target as HTMLElement).style.background = "#f9fafb";
+                        (e.target as HTMLElement).style.background = "#f3f4f6";
                         (e.target as HTMLElement).style.borderColor = "#e5e7eb";
                       }}
                     >

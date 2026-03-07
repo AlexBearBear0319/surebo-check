@@ -37,13 +37,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 14,
+          fontSize: 16,
           marginTop: 4,
-          fontWeight: 600,
-          color: isUser ? "#0369a1" : "#6b7280",
         }}
       >
-        {isUser ? "You" : "SB"}
+        {isUser ? "👤" : "🔍"}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>

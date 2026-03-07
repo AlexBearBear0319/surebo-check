@@ -43,9 +43,8 @@ export function InputBar({
   };
 
   return (
-    <div
-      style={{
-        borderTop: "1px solid #e5e7eb",
+    <div      className="mobile-input-bar"      style={{
+        borderTop: "1px solid #5e7eb",
         background: "#ffffff",
         padding: "16px 24px 24px",
         position: "sticky",
@@ -179,8 +178,8 @@ export function InputBar({
           style={{
             display: "flex",
             gap: 10,
-            alignItems: "flex-end",
-            background: "#f9fafb",
+            alignItems: "center",
+            background: "#f3f4f6",
             border: "1px solid #e5e7eb",
             borderRadius: 12,
             padding: "12px",
@@ -205,7 +204,7 @@ export function InputBar({
               transition: "all 0.2s",
             }}
           >
-            📎
+            ➕
           </button>
 
           {/* Hidden file input */}
@@ -226,11 +225,7 @@ export function InputBar({
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              mode === "detect"
-                ? "Ask what you want to verify..."
-                : "Ask SureBO..."
-            }
+            placeholder="Ask what you want to verify..."
             disabled={isLoading}
             rows={1}
             style={{

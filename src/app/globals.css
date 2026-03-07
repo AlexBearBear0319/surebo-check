@@ -24,3 +24,62 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Mobile Responsive Styles */
+
+/* Mobile sidebar - overlay on small screens */
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+
+  .mobile-sidebar {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    z-index: 100;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .mobile-sidebar.collapsed {
+    transform: translateX(-100%);
+  }
+
+  .mobile-overlay {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 99;
+  }
+
+  .mobile-header {
+    padding: 12px 12px !important;
+  }
+
+  .mobile-header-controls {
+    flex-wrap: wrap;
+    gap: 8px !important;
+  }
+
+  .mobile-lang-picker {
+    order: 2;
+    width: 100%;
+  }
+
+  .mobile-mode-toggle {
+    order: 1;
+  }
+
+  .mobile-content {
+    padding: 0 12px !important;
+  }
+
+  .mobile-input-bar {
+    padding: 12px 12px 16px !important;
+  }
+
+  .mobile-examples {
+    grid-template-columns: 1fr !important;
+  }
+}
