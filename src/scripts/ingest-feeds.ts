@@ -63,14 +63,10 @@ async function ingestFeed(feed: FeedConfig): Promise<number> {
       .map((item) => ({
         title:        (item.title ?? "Untitled").slice(0, 500),
         content:      (item.contentSnippet ?? item.content ?? item.summary ?? "").slice(0, 2000),
-        source:       feed.name,
-        url:          item.link ?? "",
+        source_url:   item.link ?? feed.name,
         published_at: item.pubDate
-          ? new Date(item.pubDate).toISOString().replace("T", " ").slice(0, 19)
-          : new Date().toISOString().replace("T", " ").slice(0, 19),
-        language:     feed.language,
-        category:     feed.category,
-        is_verified:  1,
+          ? new Date(item.pubDate).toISOString()
+          : new Date().toISOString(),
       }))
       .filter((a) => a.content.length > 50); // skip empty items
 

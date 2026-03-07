@@ -89,7 +89,7 @@ async function buildContext(query: string): Promise<string> {
     const articleBlock = articles
       .map(
         (a, i) =>
-          `[DB-${i + 1}] "${a.title}" (${a.source}, ${new Date(a.published_at).toLocaleDateString("en-SG")})\n` +
+          `[DB-${i + 1}] "${a.title}" (${a.source_url}, ${new Date(a.published_at).toLocaleDateString("en-SG")})\n` +
           a.content.slice(0, 700)  // Increased from 600
       )
       .join("\n\n");

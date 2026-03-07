@@ -12,7 +12,9 @@ import type { SessionMeta } from "@/types";
 interface SessionSidebarProps {
   open: boolean;
   sessions: SessionMeta[];
+  loading?: boolean;
   activeSessionId: string;
+  newChatDisabled?: boolean;
   onToggle: () => void;
   onNewChat: () => void;
   onSwitch: (id: string) => void;
@@ -23,7 +25,9 @@ interface SessionSidebarProps {
 export function SessionSidebar({
   open,
   sessions,
+  loading = false,
   activeSessionId,
+  newChatDisabled = false,
   onToggle,
   onNewChat,
   onSwitch,
@@ -117,17 +121,20 @@ export function SessionSidebar({
         {open && (
           <button
             onClick={onNewChat}
+            disabled={newChatDisabled}
+            title={newChatDisabled ? "Finish your current new chat first" : "New chat"}
             style={{
               flex: 1,
               padding: "8px 12px",
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 500,
-              background: "#f0f9ff",
-              border: "1px solid #bfdbfe",
-              color: "#0369a1",
-              cursor: "pointer",
+              background: newChatDisabled ? "#f3f4f6" : "#f0f9ff",
+              border: `1px solid ${newChatDisabled ? "#e5e7eb" : "#bfdbfe"}`,
+              color: newChatDisabled ? "#9ca3af" : "#0369a1",
+              cursor: newChatDisabled ? "not-allowed" : "pointer",
               fontFamily: "inherit",
+              transition: "all 0.2s",
             }}
           >
             + New
@@ -138,7 +145,13 @@ export function SessionSidebar({
       {/* ── Session list ── */}
       {open && (
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 8px" }}>
-          {sessions.length > 0 && (
+          {loading && (
+            <p style={{ fontSize: 12, color: "#d1d5db", textAlign: "center", marginTop: 32 }}>
+              Loading…
+            </p>
+          )}
+
+          {!loading && sessions.length > 0 && (
             <p
               style={{
                 fontSize: 11,
@@ -153,7 +166,7 @@ export function SessionSidebar({
             </p>
           )}
 
-          {sessions.map((s) => (
+          {!loading && sessions.map((s) => (
             <SidebarSession
               key={s.id}
               session={s}
@@ -168,7 +181,7 @@ export function SessionSidebar({
             />
           ))}
 
-          {sessions.length === 0 && (
+          {!loading && sessions.length === 0 && (
             <p
               style={{
                 fontSize: 12,
@@ -290,33 +303,19 @@ function SidebarSession({
           }}
         />
       ) : (
-        <>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 13,
-              fontWeight: 500,
-              color: active ? "#0369a1" : "#374151",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {session.name}
-          </p>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 11,
-              color: "#9ca3af",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {session.preview}
-          </p>
-        </>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            fontWeight: 500,
+            color: active ? "#0369a1" : "#374151",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {session.name}
+        </p>
       )}
     </div>
   );

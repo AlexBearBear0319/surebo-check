@@ -81,7 +81,11 @@ async function extractWebsite(url: string): Promise<{ text: string; title: strin
 }
 
 async function extractPdf(buffer: Buffer): Promise<string> {
-  const pdfParse = (await import("pdf-parse")).default;
+  // pdf-parse ships as CJS; the ESM type declaration may not expose .default,
+  // so fall back to the module itself when .default is absent.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod      = await import("pdf-parse") as any;
+  const pdfParse = (mod.default ?? mod) as (b: Buffer) => Promise<{ text: string }>;
   const data     = await pdfParse(buffer);
   return data.text.trim().slice(0, 12000);
 }

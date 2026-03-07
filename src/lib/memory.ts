@@ -1,14 +1,14 @@
 /**
  * src/lib/memory.ts
  *
- * ClickHouse-backed LangChain conversation memory.
- * Persists every turn to `chat_sessions` table; lazy-hydrates on first load.
+ * Postgres-backed LangChain conversation memory.
+ * Persists every turn to chat_history; lazy-hydrates on first load.
  */
 
 import { BaseChatMemory, type BaseChatMemoryInput } from "langchain/memory";
 import { HumanMessage, AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { InputValues, OutputValues, MemoryVariables } from "@langchain/core/memory";
-import { getChatHistory, saveChatMessage } from "./db";
+import { sbSaveMessage, sbGetHistory } from "./supabase";
 
 interface Options extends BaseChatMemoryInput {
   sessionId:      string;
@@ -36,7 +36,7 @@ export class ClickHouseMemory extends BaseChatMemory {
   private async _hydrate(): Promise<void> {
     if (this._hydrated) return;
     try {
-      const rows = await getChatHistory(this.sessionId, 30);
+      const rows = await sbGetHistory(this.sessionId, 30);
       this._history = rows.map((r) =>
         r.role === "user" ? new HumanMessage(r.content) : new AIMessage(r.content)
       );
@@ -59,11 +59,10 @@ export class ClickHouseMemory extends BaseChatMemory {
     this._history.push(new HumanMessage(userText), new AIMessage(aiText));
     this._trim();
 
-    // Fire-and-forget persistence
-    Promise.all([
-      saveChatMessage({ session_id: this.sessionId, role: "user",      content: userText }),
-      saveChatMessage({ session_id: this.sessionId, role: "assistant",  content: aiText  }),
-    ]).catch((err) => console.warn("[Memory] Persist failed:", err));
+    // Only persist the AI response — the user message is already written to DB
+    // by the route handler before the AI chain is invoked.
+    sbSaveMessage(this.sessionId, "ai", aiText)
+      .catch((err) => console.warn("[Memory] AI persist failed:", err));
   }
 
   async clear(): Promise<void> { this._history = []; }

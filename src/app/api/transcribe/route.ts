@@ -44,8 +44,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const fn = buffer.length > MAX ? transcribeLongAudio : transcribeAudio;
-    const { transcript, language, duration, segments } = await fn(buffer, file.name, langHint);
+    // Call separately so TypeScript can resolve each function's full signature
+    // (transcribeLongAudio only takes 2 params; transcribeAudio takes 3).
+    const { transcript, language, duration, segments } = buffer.length > MAX
+      ? await transcribeLongAudio(buffer, file.name)
+      : await transcribeAudio(buffer, file.name, langHint);
 
     return NextResponse.json({
       success:    true,
