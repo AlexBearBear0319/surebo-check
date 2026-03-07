@@ -34,9 +34,8 @@ export async function POST(req: NextRequest) {
               fullResponse += chunk;
               ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: "chunk", text: chunk })}\n\n`));
             }
-            // Persist AI response and bump session after stream completes
-            sbSaveMessage(sessionId, "ai", fullResponse)
-              .catch((e: unknown) => console.warn("[/api/chat] AI persist failed:", e));
+            // AI response is persisted by ClickHouseMemory.saveContext inside streamChat.
+            // Only bump the session updated_at here.
             sbBumpSession(sessionId)
               .catch((e: unknown) => console.warn("[/api/chat] Bump failed:", e));
             ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: "done", sessionId })}\n\n`));
@@ -58,13 +57,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Non-streaming path: persist user message, run AI, persist AI response
+    // Non-streaming path: persist user message, run AI (memory.saveContext saves AI response)
     await sbSaveMessage(sessionId, "user", message);
     const response = await runChat({ message, session_id: sessionId, language });
-    await Promise.all([
-      sbSaveMessage(sessionId, "ai", response),
-      sbBumpSession(sessionId),
-    ]);
+    await sbBumpSession(sessionId);
     return NextResponse.json({ response, sessionId, timestamp: new Date().toISOString() });
 
   } catch (err) {

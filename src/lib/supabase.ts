@@ -88,10 +88,20 @@ export async function sbGetHistory(
 ): Promise<Array<{ role: string; content: string; created_at: string }>> {
   const { data, error } = await supabase
     .from("chat_history")
-    .select("role, content, created_at")
+    .select("role, content, created_at, message_order")
     .eq("session_id", sessionId)
     .order("message_order", { ascending: true })
     .limit(limit);
   if (error) throw error;
-  return data ?? [];
+  if (!data) return [];
+
+  // Deduplicate: drop any row that has same role+content as the immediately preceding row
+  // (guards against double-writes that may have occurred before the route fix)
+  const deduped: typeof data = [];
+  for (const row of data) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && prev.role === row.role && prev.content === row.content) continue;
+    deduped.push(row);
+  }
+  return deduped;
 }

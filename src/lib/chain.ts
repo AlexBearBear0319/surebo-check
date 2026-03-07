@@ -52,12 +52,18 @@ function getTavily() {
 // ─── LLM Factory ─────────────────────────────────────────────────────────────
 
 function llm(streaming = false, maxTokens = 2000) {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "DASHSCOPE_API_KEY is not set. Add it to Vercel Environment Variables (Settings → Environment Variables) and redeploy."
+    );
+  }
   return new ChatOpenAI({
     modelName:    "qwen2.5-vl-72b-instruct",
     temperature:  0.1,
     maxTokens,
     streaming,
-    openAIApiKey: process.env.DASHSCOPE_API_KEY,
+    openAIApiKey: apiKey,
     configuration: {
       baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     },

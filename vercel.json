@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "src/app/api/detect/route.ts": { "maxDuration": 90 },
+    "src/app/api/chat/route.ts":   { "maxDuration": 60 },
+    "src/app/api/extract/route.ts": { "maxDuration": 60 },
+    "src/app/api/transcribe/route.ts": { "maxDuration": 60 }
+  }
+}
