@@ -53,10 +53,11 @@ function getTavily() {
 function llm(streaming = false) {
   return new ChatOpenAI({
     modelName:    "gpt-4o",
-    temperature:  0.2,
-    maxTokens:    1500,
+    temperature:  0.1,  // Very low for consistent, factual responses
+    maxTokens:    2000,  // Increased for more detailed analysis
     streaming,
     openAIApiKey: process.env.OPENAI_API_KEY,
+    topP:         0.9,  // Slightly reduced for more focused outputs
   });
 }
 
@@ -68,14 +69,19 @@ async function buildContext(query: string): Promise<string> {
 
     // Run ClickHouse RAG + Tavily web search + past fact-checks in parallel
     const [articles, pastChecks, webResults] = await Promise.all([
-      searchRelevantArticles(query, 5),
-      getSimilarFactChecks(query, 3),
+      searchRelevantArticles(query, 8),  // Increased from 5 for better coverage
+      getSimilarFactChecks(query, 5),    // Increased from 3 to check past verdicts
       tv
-        ? tv.search(`${query} Singapore`, {
-            maxResults:        5,
+        ? tv.search(`${query} Singapore official`, {
+            maxResults:        8,  // Increased from 5
             searchDepth:       "advanced",
-            includeAnswer:     false,
-            includeDomains:    ["gov.sg", "moh.gov.sg", "channelnewsasia.com", "straitstimes.com", "todayonline.com", "police.gov.sg", "cpf.gov.sg", "hdb.gov.sg", "mas.gov.sg"],
+            includeAnswer:     true,
+            includeDomains:    [
+              "gov.sg", "moh.gov.sg", "moe.gov.sg", "mas.gov.sg",
+              "cpf.gov.sg", "hdb.gov.sg", "channelnewsasia.com",
+              "straitstimes.com", "todayonline.com", "police.gov.sg",
+              "iras.gov.sg", "nea.gov.sg", "lta.gov.sg", "edb.gov.sg"
+            ],
           }).then((r) => r.results).catch(() => [])
         : Promise.resolve([]),
     ]);
@@ -84,30 +90,30 @@ async function buildContext(query: string): Promise<string> {
       .map(
         (a, i) =>
           `[DB-${i + 1}] "${a.title}" (${a.source}, ${new Date(a.published_at).toLocaleDateString("en-SG")})\n` +
-          a.content.slice(0, 600)
+          a.content.slice(0, 700)  // Increased from 600
       )
       .join("\n\n");
 
     const webBlock =
       webResults.length > 0
-        ? "\n\n[Live web sources]\n" +
+        ? "\n\n[Official & Recent Web Sources]\n" +
           webResults
-            .map((r) => `• ${r.title} (${r.url})\n  ${r.content?.slice(0, 400) ?? ""}`)
+            .map((r) => `• ${r.title} (${r.url})\n  ${r.content?.slice(0, 500) ?? ""}`)  // Increased context
             .join("\n\n")
         : "";
 
     const pastBlock =
       pastChecks.length > 0
-        ? "\n\n[Past fact-checks on similar claims]\n" +
+        ? "\n\n[Related Past Fact-Checks]\n" +
           pastChecks
-            .map((c) => `• "${c.claim.slice(0, 100)}" → ${c.verdict} (${Math.round(c.confidence * 100)}%)`)
+            .map((c) => `• "${c.claim.slice(0, 120)}" → ${c.verdict} (${Math.round(c.confidence * 100)}%)`)
             .join("\n")
         : "";
 
-    return articleBlock + webBlock + pastBlock || "No directly relevant Singapore articles found.";
+    return articleBlock + webBlock + pastBlock || "⚠️ No directly relevant Singapore sources found. Use caution interpreting this claim.";
   } catch (err) {
     console.warn("[RAG] Retrieval error:", err);
-    return "Context retrieval unavailable.";
+    return "⚠️ Context retrieval temporarily unavailable. Analyzing with available knowledge.";
   }
 }
 
