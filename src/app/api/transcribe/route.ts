@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { transcribeAudio, transcribeLongAudio } from "@/lib/whisper";
 import { detectAudio }              from "@/lib/detector";
+import { safeError }               from "@/lib/errors";
 import { randomUUID }               from "crypto";
 
 export const runtime     = "nodejs";
@@ -63,6 +64,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error("[/api/transcribe]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }

@@ -10,8 +10,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI                        from "openai";
 import { tavily }                    from "@tavily/core";
+import { safeError }                 from "@/lib/errors";
 import { writeFile, unlink }         from "fs/promises";
 import { createReadStream }          from "fs";
 import { join }                      from "path";
@@ -21,7 +21,12 @@ import { randomUUID }                from "crypto";
 export const runtime     = "nodejs";
 export const maxDuration = 120;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const DASHSCOPE_BASE = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+const DASHSCOPE_KEY  = () => {
+  const k = process.env.DASHSCOPE_API_KEY;
+  if (!k) throw new Error("DASHSCOPE_API_KEY is not set");
+  return k;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,11 +55,37 @@ function stripHtml(html: string): string {
 // ─── Extractors ───────────────────────────────────────────────────────────────
 
 async function extractYouTube(videoId: string): Promise<{ text: string; title: string }> {
-  // Dynamic import so missing package gives a clean error at runtime
   const { YoutubeTranscript } = await import("youtube-transcript");
-  const items = await YoutubeTranscript.fetchTranscript(videoId);
-  const text  = items.map((i: { text: string }) => i.text).join(" ").trim();
-  return { text, title: `YouTube video ${videoId}` };
+  let items: { text: string }[];
+  try {
+    items = await YoutubeTranscript.fetchTranscript(videoId);
+  } catch {
+    // No captions available — fall back to fetching the page for title/description
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: { "User-Agent": "SureBO/1.0 fact-checker" },
+    });
+    const html  = await pageRes.text();
+    const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim()
+                  ?? `YouTube video ${videoId}`;
+    const desc  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
+                  ?.replace(/\\n/g, " ").replace(/\\"/g, '"').slice(0, 2000) ?? "";
+    return {
+      text:  `[No captions available] Title: ${title}. ${desc}`,
+      title,
+    };
+  }
+  const text = items.map((i) => i.text).join(" ").trim();
+  // Best-effort title from the page
+  let title = `YouTube video ${videoId}`;
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: { "User-Agent": "SureBO/1.0 fact-checker" },
+    });
+    const html = await pageRes.text();
+    const t = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim();
+    if (t) title = t;
+  } catch { /* ignore */ }
+  return { text, title };
 }
 
 async function extractWebsite(url: string): Promise<{ text: string; title: string }> {
@@ -100,43 +131,57 @@ async function extractImage(buffer: Buffer, mimeType: string): Promise<string> {
   const base64  = buffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{
-      role: "user",
-      content: [
-        {
-          type: "image_url",
-          image_url: { url: dataUrl, detail: "high" },
-        },
-        {
-          type: "text",
-          text:
-            "You are a fact-checking assistant. Extract ALL text visible in this image verbatim. " +
-            "If this is a screenshot of news, social media, WhatsApp, or a document, copy the full text exactly. " +
-            "Then list any verifiable factual claims you can identify. " +
-            "Format: first the extracted text, then a section 'CLAIMS:' with bullet points.",
-        },
-      ],
-    }],
-    max_tokens: 1500,
+  const res = await fetch(`${DASHSCOPE_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${DASHSCOPE_KEY()}`,
+      "Content-Type":  "application/json",
+    },
+    body: JSON.stringify({
+      model: "qwen2.5-vl-72b-instruct",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUrl } },
+          {
+            type: "text",
+            text:
+              "You are a fact-checking assistant. Extract ALL text visible in this image verbatim. " +
+              "If this is a screenshot of news, social media, WhatsApp, or a document, copy the full text exactly. " +
+              "Then list any verifiable factual claims you can identify. " +
+              "Format: first the extracted text, then a section 'CLAIMS:' with bullet points.",
+          },
+        ],
+      }],
+      max_tokens: 1500,
+    }),
   });
 
-  return response.choices[0].message.content ?? "";
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  return data.choices?.[0]?.message?.content ?? "";
 }
 
 async function extractAudio(buffer: Buffer, filename: string): Promise<string> {
   const tmpPath = join(tmpdir(), `surebo-extract-${randomUUID()}-${filename}`);
   await writeFile(tmpPath, buffer);
   try {
-    const result = await openai.audio.transcriptions.create({
-      file:            createReadStream(tmpPath) as unknown as File,
-      model:           "whisper-1",
-      response_format: "text",
-      prompt:
-        "This may contain Singlish and code-switching between English, Malay, Mandarin, and Tamil.",
+    // Use DashScope Paraformer via OpenAI-compatible audio endpoint
+    const FormData = (await import("form-data")).default;
+    const form = new FormData();
+    form.append("file", createReadStream(tmpPath), { filename });
+    form.append("model", "paraformer-realtime-v2");
+
+    const res = await fetch(`${DASHSCOPE_BASE}/audio/transcriptions`, {
+      method:  "POST",
+      headers: {
+        "Authorization": `Bearer ${DASHSCOPE_KEY()}`,
+        ...form.getHeaders(),
+      },
+      body: form as unknown as BodyInit,
     });
-    return typeof result === "string" ? result : (result as any).text ?? "";
+
+    const data = await res.json() as { text?: string };
+    return data.text ?? "";
   } finally {
     await unlink(tmpPath).catch(() => {});
   }
@@ -231,6 +276,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error("[/api/extract]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }

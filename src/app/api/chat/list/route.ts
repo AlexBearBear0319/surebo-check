@@ -16,6 +16,6 @@ export async function GET() {
     return NextResponse.json({ sessions });
   } catch (err) {
     console.error("[/api/chat/list]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }

@@ -25,6 +25,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ messages });
   } catch (err) {
     console.error("[/api/chat/history]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }

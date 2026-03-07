@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { detectClaim }               from "@/lib/detector";
 import { getTrendingClaims, getVerdictStats } from "@/lib/db";
+import { safeError }                 from "@/lib/errors";
 import { randomUUID }                from "crypto";
 
 export const runtime     = "nodejs";
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error("[/api/detect POST]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }
 
@@ -59,6 +60,6 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ success: true, trending: await getTrendingClaims(8) });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }

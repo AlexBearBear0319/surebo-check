@@ -1,19 +1,24 @@
 /**
  * src/lib/whisper.ts
  *
- * OpenAI Whisper audio transcription.
- * Handles WhatsApp ogg/opus voice notes, long files (>25MB chunking),
- * and passes a Singlish/code-switching prompt hint for better accuracy.
+ * Audio transcription via DashScope (Paraformer) using the OpenAI-compatible endpoint.
+ * Handles WhatsApp ogg/opus voice notes and multilingual Singapore content
+ * (English, Singlish, Malay, Mandarin, Tamil).
  */
 
-import OpenAI from "openai";
 import { writeFile, unlink } from "fs/promises";
 import { createReadStream } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const DASHSCOPE_BASE = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+
+function dashscopeKey(): string {
+  const k = process.env.DASHSCOPE_API_KEY;
+  if (!k) throw new Error("DASHSCOPE_API_KEY is not set");
+  return k;
+}
 
 export interface TranscriptionResult {
   transcript: string;
@@ -22,11 +27,7 @@ export interface TranscriptionResult {
   segments?:  Array<{ start: number; end: number; text: string }>;
 }
 
-const SINGLISH_PROMPT =
-  "This audio may contain Singlish and code-switching between English, Malay, " +
-  "Mandarin, and Tamil. Transcribe accurately including all languages used.";
-
-const MAX_WHISPER_BYTES = 24 * 1024 * 1024; // 24 MB (safe under 25 MB limit)
+const MAX_DASHSCOPE_BYTES = 24 * 1024 * 1024; // 24 MB
 
 /**
  * Core transcription — accepts a Buffer or public URL.
@@ -35,7 +36,7 @@ const MAX_WHISPER_BYTES = 24 * 1024 * 1024; // 24 MB (safe under 25 MB limit)
 export async function transcribeAudio(
   input:         Buffer | string,
   filename    =  "audio.mp3",
-  languageHint?: string
+  _languageHint?: string
 ): Promise<TranscriptionResult> {
   const buffer =
     typeof input === "string"
@@ -46,19 +47,25 @@ export async function transcribeAudio(
   await writeFile(tmpPath, buffer);
 
   try {
-    const result = await openai.audio.transcriptions.create({
-      file:            createReadStream(tmpPath) as unknown as File,
-      model:           "whisper-1",
-      response_format: "verbose_json",
-      prompt:          SINGLISH_PROMPT,
-      ...(languageHint && { language: languageHint }),
+    const FormData = (await import("form-data")).default;
+    const form = new FormData();
+    form.append("file", createReadStream(tmpPath), { filename });
+    form.append("model", "paraformer-realtime-v2");
+
+    const res = await fetch(`${DASHSCOPE_BASE}/audio/transcriptions`, {
+      method:  "POST",
+      headers: {
+        "Authorization": `Bearer ${dashscopeKey()}`,
+        ...form.getHeaders(),
+      },
+      body: form as unknown as BodyInit,
     });
 
+    const data = await res.json() as { text?: string; language?: string; duration?: number };
     return {
-      transcript: result.text,
-      language:   result.language ?? "unknown",
-      duration:   result.duration,
-      segments:   result.segments?.map((s) => ({ start: s.start, end: s.end, text: s.text })),
+      transcript: data.text ?? "",
+      language:   data.language ?? "unknown",
+      duration:   data.duration,
     };
   } finally {
     await unlink(tmpPath).catch(() => {});
@@ -73,17 +80,17 @@ export async function transcribeWhatsAppVoice(buffer: Buffer): Promise<Transcrip
 }
 
 /**
- * Handles files larger than 25 MB by splitting into chunks.
+ * Handles files larger than 24 MB by splitting into chunks.
  */
 export async function transcribeLongAudio(
   buffer:   Buffer,
   filename = "audio.mp3"
 ): Promise<TranscriptionResult> {
-  if (buffer.length <= MAX_WHISPER_BYTES) return transcribeAudio(buffer, filename);
+  if (buffer.length <= MAX_DASHSCOPE_BYTES) return transcribeAudio(buffer, filename);
 
   const chunks: Buffer[] = [];
-  for (let i = 0; i < buffer.length; i += MAX_WHISPER_BYTES) {
-    chunks.push(buffer.subarray(i, i + MAX_WHISPER_BYTES));
+  for (let i = 0; i < buffer.length; i += MAX_DASHSCOPE_BYTES) {
+    chunks.push(buffer.subarray(i, i + MAX_DASHSCOPE_BYTES));
   }
 
   const results = await Promise.all(
@@ -100,3 +107,5 @@ export async function transcribeLongAudio(
     }),
   };
 }
+
+

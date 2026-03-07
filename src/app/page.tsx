@@ -507,6 +507,16 @@ export default function SureBOPage() {
     const text = input.trim();
     if (!text || isLoading) return;
 
+    // If the input looks like a bare URL, route it through extract (handles YouTube, websites, etc.)
+    try {
+      const parsed = new URL(text);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        setInput("");
+        await handleExtract(undefined, text);
+        return;
+      }
+    } catch { /* not a URL — fall through to normal chat/detect */ }
+
     // Give immediate visual feedback — disable input and show spinner
     setIsLoading(true);
     setInput("");
@@ -528,7 +538,7 @@ export default function SureBOPage() {
     // Pass the resolved sessionId directly to avoid stale closure
     if (mode === "detect") await runDetection(text, sessionId);
     else await sendChatMessage(text, sessionId);
-  }, [input, isLoading, mode, activeSessionId, runDetection, sendChatMessage]);
+  }, [input, isLoading, mode, activeSessionId, runDetection, sendChatMessage, handleExtract]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (

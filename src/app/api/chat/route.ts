@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { streamChat, runChat }       from "@/lib/chain";
 import { sbSaveMessage, sbBumpSession } from "@/lib/supabase";
+import { safeError }                 from "@/lib/errors";
 import { randomUUID }                from "crypto";
 
 export const runtime    = "nodejs";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
               .catch((e: unknown) => console.warn("[/api/chat] Bump failed:", e));
             ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: "done", sessionId })}\n\n`));
           } catch (err) {
-            ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: "error", message: String(err) })}\n\n`));
+            ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: "error", message: safeError(err) })}\n\n`));
           } finally {
             ctrl.close();
           }
@@ -65,6 +66,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error("[/api/chat]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }

@@ -47,6 +47,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ response: aiResponse });
   } catch (err) {
     console.error("[/api/chat/message]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: safeError(err) }, { status: 500 });
   }
 }
