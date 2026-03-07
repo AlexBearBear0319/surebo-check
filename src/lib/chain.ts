@@ -42,9 +42,13 @@ const ClaimSchema = z.array(z.object({
 
 let _tavily: ReturnType<typeof tavily> | null = null;
 
+function stripQuotes(s: string) {
+  return s.replace(/^["']|["']$/g, "").trim();
+}
+
 function getTavily() {
   if (!_tavily && process.env.TAVILY_API_KEY) {
-    _tavily = tavily({ apiKey: process.env.TAVILY_API_KEY });
+    _tavily = tavily({ apiKey: stripQuotes(process.env.TAVILY_API_KEY) });
   }
   return _tavily;
 }
@@ -52,7 +56,9 @@ function getTavily() {
 // ─── LLM Factory ─────────────────────────────────────────────────────────────
 
 function llm(streaming = false, maxTokens = 2000) {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const apiKey = process.env.DASHSCOPE_API_KEY
+    ? stripQuotes(process.env.DASHSCOPE_API_KEY)
+    : undefined;
   if (!apiKey) {
     throw new Error(
       "DASHSCOPE_API_KEY is not set. Add it to Vercel Environment Variables (Settings → Environment Variables) and redeploy."

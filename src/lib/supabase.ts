@@ -1,7 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const stripQuotes = (s: string) => s.replace(/^["']|["']$/g, "").trim();
+
+const supabaseUrl        = stripQuotes(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+const supabaseServiceKey = stripQuotes(process.env.SUPABASE_SERVICE_ROLE_KEY ?? "");
 
 // Export this single instance to use in all your API routes
 export const supabase = createClient(supabaseUrl, supabaseServiceKey);
