@@ -23,6 +23,7 @@ export default function SureBOPage() {
   const [sessionCreating, setSessionCreating] = useState(false);
   const [language] = useState<Language>("en");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
 
   // ── New-chat modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -57,6 +58,16 @@ export default function SureBOPage() {
   const [activeSessionId, setActiveSessionIdState] = useState<string>("");
   const [sessionsLoading, setSessionsLoading] = useState(true);
 
+  // Fetch trending Singapore topics for the empty-state examples
+  useEffect(() => {
+    fetch("/api/trending")
+      .then((r) => r.json())
+      .then((data: { topics?: string[] }) => {
+        if (data.topics && data.topics.length >= 2) setTrendingTopics(data.topics);
+      })
+      .catch(() => { /* keep static fallback */ });
+  }, []);
+
   // Auto-collapse sidebar on mobile
   useEffect(() => {
     const handleResize = () => {
@@ -77,37 +88,8 @@ export default function SureBOPage() {
       const data = await res.json() as { sessions: { session_id: string; topic: string }[] };
       const list = (data.sessions ?? []).map((s) => ({ id: s.session_id, name: s.topic }));
       setSessions(list);
-
-      if (list.length > 0) {
-        // Auto-select the most recent session and load its history
-        setActiveSessionIdState(list[0].id);
-        // Load history in background — use a separate fetch so isLoading stays false
-        apiFetch(`/api/chat/history?sessionId=${encodeURIComponent(list[0].id)}`)
-          .then((r) => r.json())
-          .then((d: { messages?: { role: string; content: string; created_at: string }[] }) => {
-            const loaded: import("@/types").ChatMessage[] = (d.messages ?? []).map((m) => ({
-              id: crypto.randomUUID(),
-              role: m.role as "user" | "assistant",
-              content: m.content,
-              timestamp: new Date(m.created_at),
-            }));
-            // If the last DB message is a user turn, the AI never responded — inject failed placeholder
-            if (loaded.length > 0 && loaded[loaded.length - 1].role === "user") {
-              loaded.push({
-                id: crypto.randomUUID(),
-                role: "assistant" as const,
-                content: "",
-                timestamp: new Date(),
-                hasFailed: true,
-              });
-            }
-            setMessages(loaded);
-          })
-          .catch(() => {/* history unavailable — start fresh */});
-      } else {
-        // No sessions yet — show empty state; user starts via the “+ New” button.
-        setActiveSessionIdState("");
-      }
+      // Always start on the homepage so the user sees trending topics first
+      setActiveSessionIdState("");
     } catch {
       // DB unavailable – still allow chatting with a transient local ID
       setActiveSessionIdState(crypto.randomUUID());
@@ -772,7 +754,8 @@ const res = await apiFetch("/api/chat/new", {
                 </p>
               </div>
 
-              {/* Quick examples */}
+              {/* Quick examples — only render once trending topics are loaded */}
+              {trendingTopics.length > 0 && (
               <div style={{ width: "100%", maxWidth: 600 }}>
                 <p
                   style={{
@@ -794,7 +777,7 @@ const res = await apiFetch("/api/chat/new", {
                     gap: 12,
                   }}
                 >
-                  {QUICK_EXAMPLES_BY_LANG[language].map((ex) => (
+                  {trendingTopics.map((ex) => (
                     <button
                       key={ex}
                       onClick={() => {
@@ -828,6 +811,7 @@ const res = await apiFetch("/api/chat/new", {
                   ))}
                 </div>
               </div>
+              )}
             </div>
           )}
 

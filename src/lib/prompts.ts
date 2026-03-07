@@ -60,7 +60,7 @@ Notable Figures: PM, Ministers, Temasek, GIC leadership
 - Note satire/parody explicitly if detected to prevent confusion
 - If claim originated from unverified WhatsApp/Telegram chain messages, mark as HIGH RISK
 - Current date: {current_date}
-- LANGUAGE REQUIREMENT: Always detect the language of the user's latest message and respond ENTIRELY in that same language. If they wrote in 中文 respond in 中文, if Bahasa Melayu respond in Bahasa Melayu, if தமிழ் respond in தமிழ், if English respond in English. NEVER mix languages in a single response.
+- LANGUAGE REQUIREMENT: Respond in the language of the USER'S CURRENT MESSAGE ONLY — ignore the language of any previous messages in the chat history. If the current message is English, respond 100% in English. If Chinese, 100% in Chinese. If Malay, 100% in Malay. If Tamil, 100% in Tamil. The prior conversation language is irrelevant. NEVER mix languages.
 
 Relevant Singapore news context:
 {context}
@@ -102,7 +102,7 @@ Respond ONLY with valid JSON (no markdown, no extra text). ALL string values mus
   "related_official_links": ["<official SG government or CNA link>"]
 }}
 
-⚠️ NON-NEGOTIABLE: If the claim is in Chinese, write ALL values in Chinese. If Malay, all Malay. If Tamil, all Tamil. If English, all English. JSON keys stay in English. Do NOT mix languages.`),
+⚠️ NON-NEGOTIABLE: Detect the language of the CLAIM TEXT above (not the chat history). Write ALL JSON string values in that language. If the claim is English, all values in English — even if prior conversation was in another language. JSON keys stay in English. Do NOT mix languages.`),
 ]);
 
 // ─── Conversational Chat Prompt ───────────────────────────────────────────────
@@ -113,15 +113,15 @@ export const CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   HumanMessagePromptTemplate.fromTemplate(
     `{input}
 
-DETECT the language of the message above and write your ENTIRE response in that SAME language. Every single word.
+DETECT the language of THIS SPECIFIC MESSAGE (above) — ignore all previous messages in the conversation history — and write your ENTIRE response in that SAME language. Every single word.
 
 RESPONSE STRUCTURE — 4 parts, no deviations:
-1. ONE sentence describing what this claim/content is about (translated into the user's language)
-2. Verdict: REAL / FAKE / MISLEADING / UNVERIFIED — confidence 0-100% — brief credibility label (all in user's language)
-3. 📰 True story: (a) real facts with source name + date + URL, (b) current status — choose one: STILL ONGOING / RESOLVED — [outcome] / DOES NOT EXIST in any official record (if nothing found: suggest gov.sg or CNA) — write in user's language
-4. 1-2 sentences on the single most important reason for the verdict — in user's language. No padding.
+1. ONE sentence describing what this claim/content is about (in the detected language)
+2. Verdict: REAL / FAKE / MISLEADING / UNVERIFIED — confidence 0-100% — brief credibility label (in detected language)
+3. 📰 True story: (a) real facts with source name + date + URL, (b) current status — choose one: STILL ONGOING / RESOLVED — [outcome] / DOES NOT EXIST in any official record (if nothing found: suggest gov.sg or CNA) — in detected language
+4. 1-2 sentences on the single most important reason for the verdict — in detected language. No padding.
 
-⚠️ NON-NEGOTIABLE: If the user's message is in Chinese, respond 100% in Chinese. If Malay, 100% in Malay. If Tamil, 100% in Tamil. If English, 100% in English. Do NOT mix languages. Do NOT use English labels or headings unless the user wrote in English.`
+⚠️ NON-NEGOTIABLE: The language of this current message determines the response language — not the language of earlier messages. If this message is English, respond 100% in English even if the previous messages were Chinese. Do NOT mix languages.`
   ),
 ]);
 
