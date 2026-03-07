@@ -62,7 +62,7 @@ If a field has no real answer from the context, write exactly: "Not found in ava
   "confidence": <0.0–1.0>,
   "headline": "<10 words max: verdict + the single strongest reason, e.g. 'FAKE — CPF Board confirms no such policy change'>",
   "explanation": "<3 sentences max. Sentence 1: what the claim says. Sentence 2: what a NAMED source from the context says about it (quote the source name, date, URL). Sentence 3: why that makes it REAL/FAKE/MISLEADING/UNVERIFIED. BANNED phrases: 'lacks credible evidence', 'contradicts reliable sources', 'no evidence to support', 'according to multiple sources without naming them'.>",
-  "true_story": "<2–3 sentences. (1) What actually happened — name the source + date + URL from [CURRENT STATUS] or other context. (2) Choose ONE status label: 'This is STILL ONGOING as of {current_date}.' OR 'This has since been RESOLVED — [specific outcome].' OR 'This claim does NOT EXIST in any official Singapore record.' (3) Where to verify: exact URL. If no source found: 'No official report found — check gov.sg or CNA directly.'>",
+  "true_story": "<Write exactly in this format — 3 lines, no deviation:\nLatest news: [One sentence — what actually happened or current status, using [CURRENT STATUS] sources. Include the source name and date. If nothing found: 'No official report found for this claim.']\nStatus: [Choose ONE: 'STILL ONGOING as of {current_date}' / 'RESOLVED — [specific outcome]' / 'NOT FOUND in any official Singapore record']\nTo read more: [The single most relevant URL from the context. Must be a real URL from the context. If none: 'Check gov.sg or channelnewsasia.com']>"
   "red_flags": ["<specific thing in THIS claim that is suspicious — not generic>"],
   "supporting_evidence": ["<named source + date + specific fact from context>"],
   "trusted_sources": ["<Source Name — URL>"],
@@ -83,7 +83,10 @@ Reply using ONLY this format — no exceptions, no extra paragraphs:
 
 → This [statement / image / article / video / audio] is about [one sentence — what it claims]
 → Result: [REAL / FAKE / MISLEADING / UNVERIFIED] — [0–100]% [credible / suspicious / misleading / unconfirmed]
-→ 📰 True story: [Name the source + date + URL from context. Then ONE of: "STILL ONGOING as of {current_date}" / "RESOLVED — [what happened]" / "DOES NOT EXIST in any official record." If nothing in context: "No official report found — check gov.sg or CNA to be safe."]
+→ 📰 True story:
+   Latest news: [One sentence — what actually happened, from [CURRENT STATUS] source + date. If nothing found: 'No official report found for this claim.']
+   Status: [ONE of: 'STILL ONGOING as of {current_date}' / 'RESOLVED — [outcome]' / 'NOT FOUND in any official Singapore record']
+   To read more: [single real URL from context, or 'Check gov.sg or channelnewsasia.com']
 
 [1 sentence only: the single most specific reason from the context. NEVER write vague phrases like "lacks evidence" or "contradicts reliable sources" without naming them.]`,
   ),

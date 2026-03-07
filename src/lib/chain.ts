@@ -31,6 +31,7 @@ const DetectionSchema = z.object({
   what_to_do:             z.string(),
   related_official_links: z.array(z.string()).default([]),
   true_story:             z.string().optional(),
+  latest_news_url:        z.string().optional(),
 });
 
 const ClaimSchema = z.array(z.object({

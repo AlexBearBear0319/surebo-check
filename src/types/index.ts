@@ -20,6 +20,7 @@ export interface DetectionResult {
   what_to_do: string;
   related_official_links: string[];
   true_story?: string;
+  latest_news_url?: string;
   detectedLanguage: string;
   wasTranslated: boolean;
   processingTimeMs: number;
