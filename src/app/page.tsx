@@ -1,13 +1,51 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { randomUUID } from "crypto";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type Verdict = "REAL" | "FAKE" | "MISLEADING" | "UNVERIFIED";
 type Mode = "chat" | "detect";
 type Language = "en" | "ms" | "zh" | "ta";
+
+interface SessionMeta {
+  id:         string;
+  name:       string;
+  folderId?:  string;
+  createdAt:  number;
+  updatedAt:  number;
+  preview:    string;
+}
+
+interface ChatFolder {
+  id:        string;
+  name:      string;
+  createdAt: number;
+  collapsed: boolean;
+}
+
+// ─── localStorage helpers ──────────────────────────────────────────────────────
+
+const LS_SESSIONS = "surebo_sessions";
+const LS_FOLDERS  = "surebo_folders";
+const lsMsgsKey   = (id: string) => `surebo_msgs_${id}`;
+
+function lsGet<T>(key: string, fallback: T): T {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
+function lsSet(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+function loadMsgs(id: string): ChatMessage[] {
+  return lsGet<ChatMessage[]>(lsMsgsKey(id), []).map((m) => ({
+    ...m, timestamp: new Date(m.timestamp),
+  }));
+}
+function saveMsgs(id: string, msgs: ChatMessage[]) {
+  lsSet(lsMsgsKey(id), msgs);
+}
 
 interface DetectionResult {
   verdict: Verdict;
@@ -45,7 +83,7 @@ const VERDICT_CONFIG: Record<Verdict, { color: string; bg: string; border: strin
   REAL:        { color: "#4ade80", bg: "rgba(74,222,128,0.08)", border: "rgba(74,222,128,0.3)", label: "VERIFIED TRUE", icon: "✓" },
   FAKE:        { color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.3)", label: "FALSE INFORMATION", icon: "✗" },
   MISLEADING:  { color: "#fbbf24", bg: "rgba(251,191,36,0.08)", border: "rgba(251,191,36,0.3)", label: "MISLEADING", icon: "!" },
-  UNVERIFIED:  { color: "#94a3b8", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.3)", label: "UNVERIFIED", icon: "?" },
+  UNVERIFIED:  { color: "#c58040", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.3)", label: "UNVERIFIED", icon: "?" },
 };
 
 const QUICK_EXAMPLES = [
@@ -68,20 +106,114 @@ const CONTENT_TYPE_LABEL: Record<string, { icon: string; label: string }> = {
   audio:    { icon: "🎙", label: "Audio"    },
 };
 
+function newSessionId() {
+  return typeof crypto !== "undefined" ? crypto.randomUUID() : Math.random().toString(36);
+}
+
 export default function SureBOPage() {
-  const [mode, setMode] = useState<Mode>("chat");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
+  const [mode, setMode]           = useState<Mode>("chat");
+  const [messages, setMessages]   = useState<ChatMessage[]>([]);
+  const [input, setInput]         = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(() => typeof crypto !== "undefined" ? crypto.randomUUID() : Math.random().toString(36));
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage]   = useState<Language>("en");
   const [showAttachMenu, setShowAttachMenu] = useState(false);
-  const [urlInput, setUrlInput] = useState("");
+  const [urlInput, setUrlInput]   = useState("");
   const [showUrlInput, setShowUrlInput] = useState(false);
+  const [sidebarOpen, setSidebarOpen]   = useState(true);
+
+  // ── Session store (localStorage) ──────────────────────────────────────────
+  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [folders,  setFolders]  = useState<ChatFolder[]>([]);
+  const [activeSessionId, setActiveSessionIdState] = useState<string>(() => newSessionId());
+
+  // Load persisted data on mount
+  useEffect(() => {
+    setSessions(lsGet<SessionMeta[]>(LS_SESSIONS, []));
+    setFolders(lsGet<ChatFolder[]>(LS_FOLDERS, []));
+  }, []);
+
+  // Persist sessions/folders whenever they change
+  useEffect(() => { lsSet(LS_SESSIONS, sessions); }, [sessions]);
+  useEffect(() => { lsSet(LS_FOLDERS,  folders);  }, [folders]);
+
+  // Auto-save messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length === 0) return;
+    saveMsgs(activeSessionId, messages);
+    // Auto-name session from first user message
+    const firstUser = messages.find((m) => m.role === "user");
+    if (firstUser) {
+      setSessions((prev) => {
+        const exists = prev.find((s) => s.id === activeSessionId);
+        const preview = firstUser.content.slice(0, 60);
+        const name    = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? "…" : "");
+        if (exists) {
+          return prev.map((s) =>
+            s.id === activeSessionId ? { ...s, preview, updatedAt: Date.now() } : s
+          );
+        }
+        return [
+          { id: activeSessionId, name, preview, createdAt: Date.now(), updatedAt: Date.now() },
+          ...prev,
+        ];
+      });
+    }
+  }, [messages, activeSessionId]);
+
+  // ── Switch / create session ────────────────────────────────────────────────
+  const switchSession = useCallback((id: string) => {
+    setActiveSessionIdState(id);
+    setMessages(loadMsgs(id));
+    setInput("");
+    setShowAttachMenu(false);
+    setShowUrlInput(false);
+  }, []);
+
+  const newChat = useCallback(() => {
+    const id = newSessionId();
+    setActiveSessionIdState(id);
+    setMessages([]);
+    setInput("");
+  }, []);
+
+  const renameSession = useCallback((id: string, name: string) => {
+    setSessions((prev) => prev.map((s) => s.id === id ? { ...s, name } : s));
+  }, []);
+
+  const deleteSession = useCallback((id: string) => {
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    try { localStorage.removeItem(lsMsgsKey(id)); } catch {}
+    if (id === activeSessionId) newChat();
+  }, [activeSessionId, newChat]);
+
+  const createFolder = useCallback((name: string) => {
+    setFolders((prev) => [
+      ...prev,
+      { id: newSessionId(), name, createdAt: Date.now(), collapsed: false },
+    ]);
+  }, []);
+
+  const renameFolder = useCallback((id: string, name: string) => {
+    setFolders((prev) => prev.map((f) => f.id === id ? { ...f, name } : f));
+  }, []);
+
+  const deleteFolder = useCallback((id: string) => {
+    setFolders((prev) => prev.filter((f) => f.id !== id));
+    setSessions((prev) => prev.map((s) => s.folderId === id ? { ...s, folderId: undefined } : s));
+  }, []);
+
+  const toggleFolderCollapse = useCallback((id: string) => {
+    setFolders((prev) => prev.map((f) => f.id === id ? { ...f, collapsed: !f.collapsed } : f));
+  }, []);
+
+  const moveToFolder = useCallback((sessionId: string, folderId: string | undefined) => {
+    setSessions((prev) => prev.map((s) => s.id === sessionId ? { ...s, folderId } : s));
+  }, []);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const urlInputRef = useRef<HTMLInputElement>(null);
+  const inputRef       = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef   = useRef<HTMLInputElement>(null);
+  const urlInputRef    = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -112,7 +244,7 @@ export default function SureBOPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, sessionId, stream: true, language }),
+        body: JSON.stringify({ message: text, sessionId: activeSessionId, stream: true, language }),
       });
 
       if (!res.body) throw new Error("No response body");
@@ -158,7 +290,7 @@ export default function SureBOPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, language]);
+  }, [activeSessionId, language]);
 
   // ── Run Detection ────────────────────────────────────────────────────────────
   const runDetection = useCallback(async (text: string) => {
@@ -183,7 +315,7 @@ export default function SureBOPage() {
       const res = await fetch("/api/detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: text, sessionId, localiseResult: language !== "en" }),
+        body: JSON.stringify({ claim: text, sessionId: activeSessionId, language, localise: language !== "en" }),
       });
       const data = await res.json();
 
@@ -209,7 +341,7 @@ export default function SureBOPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, language]);
+  }, [activeSessionId, language]);
 
   // ── Handle URL / file extraction (YouTube, website, PDF, DOCX, image, etc.) ──
   const handleExtract = useCallback(async (file?: File, url?: string) => {
@@ -283,7 +415,7 @@ export default function SureBOPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSessionId, mode, runDetection, sendChatMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
@@ -305,20 +437,41 @@ export default function SureBOPage() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "#0a0e1a",
+      background: "linear-gradient(160deg, #1f1500 0%, #1a0b06 35%, #1c080d 70%, #1b090c 100%)",
       fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
-      color: "#e2e8f0",
+      color: "#fef2ce",
       display: "flex",
-      flexDirection: "column",
+      flexDirection: "row",
     }}>
+      {/* ── Sidebar ── */}
+      <SessionSidebar
+        open={sidebarOpen}
+        sessions={sessions}
+        folders={folders}
+        activeSessionId={activeSessionId}
+        onToggle={() => setSidebarOpen((v) => !v)}
+        onNewChat={newChat}
+        onSwitch={switchSession}
+        onRename={renameSession}
+        onDelete={deleteSession}
+        onCreateFolder={createFolder}
+        onRenameFolder={renameFolder}
+        onDeleteFolder={deleteFolder}
+        onToggleFolderCollapse={toggleFolderCollapse}
+        onMoveToFolder={moveToFolder}
+      />
+
+      {/* ── Right column: header + main + input ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+
       {/* ── Header ── */}
       <header style={{
-        borderBottom: "1px solid rgba(226,232,240,0.08)",
+        borderBottom: "1px solid rgba(246,191,9,0.08)",
         padding: "16px 24px",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        background: "rgba(10,14,26,0.95)",
+        background: "rgba(20,10,2,0.95)",
         backdropFilter: "blur(12px)",
         position: "sticky",
         top: 0,
@@ -338,7 +491,7 @@ export default function SureBOPage() {
             <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "0.05em", margin: 0, color: "#fff" }}>
               Sure<span style={{ color: "#EF3340" }}>BO</span>
             </h1>
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0, letterSpacing: "0.1em" }}>
+            <p style={{ fontSize: 11, color: "#80521f", margin: 0, letterSpacing: "0.1em" }}>
               SG INFO CREDIBILITY ASSISTANT
             </p>
           </div>
@@ -351,9 +504,9 @@ export default function SureBOPage() {
               <button key={lang} onClick={() => setLanguage(lang)} style={{
                 padding: "4px 10px", fontSize: 11, borderRadius: 4,
                 border: "1px solid",
-                borderColor: language === lang ? "#EF3340" : "rgba(226,232,240,0.1)",
+                borderColor: language === lang ? "#EF3340" : "rgba(246,191,9,0.1)",
                 background: language === lang ? "rgba(239,51,64,0.15)" : "transparent",
-                color: language === lang ? "#EF3340" : "#64748b",
+                color: language === lang ? "#EF3340" : "#80521f",
                 cursor: "pointer", letterSpacing: "0.05em",
                 transition: "all 0.15s",
               }}>
@@ -364,14 +517,14 @@ export default function SureBOPage() {
 
           {/* Mode toggle */}
           <div style={{
-            display: "flex", background: "rgba(226,232,240,0.05)",
-            borderRadius: 6, padding: 2, border: "1px solid rgba(226,232,240,0.08)",
+            display: "flex", background: "rgba(246,191,9,0.05)",
+            borderRadius: 6, padding: 2, border: "1px solid rgba(246,191,9,0.08)",
           }}>
             {(["chat", "detect"] as Mode[]).map((m) => (
               <button key={m} onClick={() => setMode(m)} style={{
                 padding: "6px 14px", fontSize: 11, borderRadius: 4,
-                background: mode === m ? (m === "detect" ? "rgba(239,51,64,0.2)" : "rgba(99,102,241,0.2)") : "transparent",
-                color: mode === m ? (m === "detect" ? "#EF3340" : "#818cf8") : "#64748b",
+                background: mode === m ? (m === "detect" ? "rgba(239,51,64,0.2)" : "rgba(246,191,9,0.15)") : "transparent",
+                color: mode === m ? (m === "detect" ? "#EF3340" : "#f6bf09") : "#80521f",
                 border: "none", cursor: "pointer", letterSpacing: "0.08em",
                 transition: "all 0.15s", fontFamily: "inherit",
               }}>
@@ -391,36 +544,36 @@ export default function SureBOPage() {
             <div style={{ textAlign: "center" }}>
               <div style={{
                 width: 72, height: 72, borderRadius: 20,
-                background: "linear-gradient(135deg, rgba(239,51,64,0.2), rgba(99,102,241,0.2))",
+                background: "linear-gradient(135deg, rgba(246,191,9,0.15), rgba(199,56,92,0.2))",
                 border: "1px solid rgba(239,51,64,0.3)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 margin: "0 auto 20px", fontSize: 32,
                 boxShadow: "0 0 40px rgba(239,51,64,0.15)",
               }}>🔍</div>
-              <h2 style={{ fontSize: 28, fontWeight: 700, color: "#f8fafc", margin: "0 0 8px", letterSpacing: "0.03em" }}>
+              <h2 style={{ fontSize: 28, fontWeight: 700, color: "#fef9e6", margin: "0 0 8px", letterSpacing: "0.03em" }}>
                 Sure or not, check first lah
               </h2>
-              <p style={{ color: "#64748b", fontSize: 14, maxWidth: 420, lineHeight: 1.6, margin: "0 auto" }}>
+              <p style={{ color: "#80521f", fontSize: 14, maxWidth: 420, lineHeight: 1.6, margin: "0 auto" }}>
                 Verify Singapore news claims in English, Bahasa Melayu, 中文, or தமிழ்.
                 Paste any claim, send a voice note, or just ask me anything.
               </p>
             </div>
 
             <div style={{ width: "100%" }}>
-              <p style={{ fontSize: 11, color: "#475569", letterSpacing: "0.1em", marginBottom: 10, textAlign: "center" }}>
+              <p style={{ fontSize: 11, color: "#5a380e", letterSpacing: "0.1em", marginBottom: 10, textAlign: "center" }}>
                 QUICK EXAMPLES
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {QUICK_EXAMPLES.map((ex) => (
                   <button key={ex} onClick={() => { setInput(ex); inputRef.current?.focus(); }} style={{
-                    background: "rgba(226,232,240,0.03)",
-                    border: "1px solid rgba(226,232,240,0.08)",
+                    background: "rgba(246,191,9,0.03)",
+                    border: "1px solid rgba(246,191,9,0.08)",
                     borderRadius: 8, padding: "12px 14px", textAlign: "left",
-                    color: "#94a3b8", fontSize: 13, cursor: "pointer",
+                    color: "#c58040", fontSize: 13, cursor: "pointer",
                     transition: "all 0.15s", fontFamily: "inherit", lineHeight: 1.4,
                   }}
-                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "rgba(239,51,64,0.3)"; (e.target as HTMLElement).style.color = "#e2e8f0"; }}
-                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "rgba(226,232,240,0.08)"; (e.target as HTMLElement).style.color = "#94a3b8"; }}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "rgba(239,51,64,0.3)"; (e.target as HTMLElement).style.color = "#fef2ce"; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "rgba(246,191,9,0.08)"; (e.target as HTMLElement).style.color = "#c58040"; }}
                   >
                     "{ex}"
                   </button>
@@ -441,15 +594,15 @@ export default function SureBOPage() {
 
       {/* ── Input Bar ── */}
       <div style={{
-        borderTop: "1px solid rgba(226,232,240,0.08)",
-        background: "rgba(10,14,26,0.98)",
+        borderTop: "1px solid rgba(246,191,9,0.08)",
+        background: "rgba(20,10,2,0.98)",
         backdropFilter: "blur(12px)",
         padding: "16px 24px 24px",
         position: "sticky", bottom: 0,
       }}>
         <div style={{ maxWidth: 860, margin: "0 auto" }}>
           {/* Mode hint */}
-          <p style={{ fontSize: 11, color: "#475569", letterSpacing: "0.08em", marginBottom: 8 }}>
+          <p style={{ fontSize: 11, color: "#5a380e", letterSpacing: "0.08em", marginBottom: 8 }}>
             {mode === "detect"
               ? "🔎 DETECT MODE — paste a claim or attach content to verify"
               : "💬 CHAT MODE — ask me anything or attach content to analyse"}
@@ -459,8 +612,8 @@ export default function SureBOPage() {
           {showUrlInput && (
             <div style={{
               display: "flex", gap: 8, marginBottom: 8,
-              background: "rgba(99,102,241,0.06)",
-              border: "1px solid rgba(99,102,241,0.2)",
+              background: "rgba(199,56,92,0.06)",
+              border: "1px solid rgba(199,56,92,0.2)",
               borderRadius: 10, padding: "8px 12px",
             }}>
               <span style={{ fontSize: 16, lineHeight: "32px", flexShrink: 0 }}>🔗</span>
@@ -476,7 +629,7 @@ export default function SureBOPage() {
                 placeholder="Paste YouTube URL or website link and press Enter..."
                 style={{
                   flex: 1, background: "transparent", border: "none", outline: "none",
-                  color: "#e2e8f0", fontSize: 13, fontFamily: "inherit",
+                  color: "#fef2ce", fontSize: 13, fontFamily: "inherit",
                 }}
                 autoFocus
               />
@@ -485,9 +638,9 @@ export default function SureBOPage() {
                 disabled={!urlInput.trim() || isLoading}
                 style={{
                   padding: "4px 12px", borderRadius: 6, fontSize: 11,
-                  background: urlInput.trim() ? "rgba(99,102,241,0.3)" : "transparent",
-                  border: "1px solid rgba(99,102,241,0.3)",
-                  color: urlInput.trim() ? "#818cf8" : "#475569",
+                  background: urlInput.trim() ? "rgba(199,56,92,0.3)" : "transparent",
+                  border: "1px solid rgba(199,56,92,0.3)",
+                  color: urlInput.trim() ? "#e8849a" : "#5a380e",
                   cursor: urlInput.trim() ? "pointer" : "default", letterSpacing: "0.06em",
                 }}
               >
@@ -496,7 +649,7 @@ export default function SureBOPage() {
               <button
                 onClick={() => { setShowUrlInput(false); setUrlInput(""); }}
                 style={{
-                  background: "transparent", border: "none", color: "#475569",
+                  background: "transparent", border: "none", color: "#5a380e",
                   cursor: "pointer", fontSize: 16, padding: "0 4px",
                 }}
               >✕</button>
@@ -507,8 +660,8 @@ export default function SureBOPage() {
           {showAttachMenu && (
             <div style={{
               display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap",
-              background: "rgba(226,232,240,0.03)",
-              border: "1px solid rgba(226,232,240,0.08)",
+              background: "rgba(246,191,9,0.03)",
+              border: "1px solid rgba(246,191,9,0.08)",
               borderRadius: 10, padding: "10px 12px",
             }}>
               {[
@@ -530,12 +683,12 @@ export default function SureBOPage() {
                   style={{
                     display: "flex", alignItems: "center", gap: 6,
                     padding: "6px 12px", borderRadius: 7, fontSize: 12,
-                    background: "rgba(226,232,240,0.05)",
-                    border: "1px solid rgba(226,232,240,0.1)",
-                    color: "#94a3b8", cursor: "pointer", transition: "all 0.15s",
+                    background: "rgba(246,191,9,0.05)",
+                    border: "1px solid rgba(246,191,9,0.1)",
+                    color: "#c58040", cursor: "pointer", transition: "all 0.15s",
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(239,51,64,0.4)"; (e.currentTarget as HTMLElement).style.color = "#e2e8f0"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(226,232,240,0.1)"; (e.currentTarget as HTMLElement).style.color = "#94a3b8"; }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(239,51,64,0.4)"; (e.currentTarget as HTMLElement).style.color = "#fef2ce"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(246,191,9,0.1)"; (e.currentTarget as HTMLElement).style.color = "#c58040"; }}
                 >
                   <span style={{ fontSize: 15 }}>{icon}</span>
                   <span style={{ letterSpacing: "0.04em" }}>{label}</span>
@@ -545,7 +698,7 @@ export default function SureBOPage() {
                 onClick={() => setShowAttachMenu(false)}
                 style={{
                   marginLeft: "auto", background: "transparent", border: "none",
-                  color: "#475569", cursor: "pointer", fontSize: 16, padding: "0 4px",
+                  color: "#5a380e", cursor: "pointer", fontSize: 16, padding: "0 4px",
                 }}
               >✕</button>
             </div>
@@ -554,8 +707,8 @@ export default function SureBOPage() {
           {/* ── Main input row ── */}
           <div style={{
             display: "flex", gap: 8, alignItems: "flex-end",
-            background: "rgba(226,232,240,0.04)",
-            border: "1px solid rgba(226,232,240,0.1)",
+            background: "rgba(246,191,9,0.04)",
+            border: "1px solid rgba(246,191,9,0.1)",
             borderRadius: 12, padding: "8px 8px 8px 14px",
           }}>
             {/* Attach button */}
@@ -564,9 +717,9 @@ export default function SureBOPage() {
               title="Attach content"
               style={{
                 padding: "8px 10px", borderRadius: 8,
-                border: `1px solid ${showAttachMenu ? "rgba(239,51,64,0.4)" : "rgba(226,232,240,0.1)"}`,
+                border: `1px solid ${showAttachMenu ? "rgba(239,51,64,0.4)" : "rgba(246,191,9,0.1)"}`,
                 background: showAttachMenu ? "rgba(239,51,64,0.1)" : "transparent",
-                color: showAttachMenu ? "#EF3340" : "#64748b",
+                color: showAttachMenu ? "#EF3340" : "#80521f",
                 cursor: "pointer", fontSize: 16, flexShrink: 0, transition: "all 0.15s",
               }}
             >
@@ -595,7 +748,7 @@ export default function SureBOPage() {
               rows={1}
               style={{
                 flex: 1, background: "transparent", border: "none", outline: "none",
-                color: "#e2e8f0", fontSize: 14, fontFamily: "inherit",
+                color: "#fef2ce", fontSize: 14, fontFamily: "inherit",
                 resize: "none", lineHeight: 1.6, maxHeight: 160,
                 overflowY: "auto", paddingTop: 6, paddingBottom: 6,
               }}
@@ -612,10 +765,10 @@ export default function SureBOPage() {
               style={{
                 width: 40, height: 40, borderRadius: 8, flexShrink: 0,
                 background: input.trim() && !isLoading
-                  ? (mode === "detect" ? "linear-gradient(135deg, #EF3340, #c0392b)" : "linear-gradient(135deg, #6366f1, #4f46e5)")
-                  : "rgba(226,232,240,0.05)",
+                  ? (mode === "detect" ? "linear-gradient(135deg, #EF3340, #c0392b)" : "linear-gradient(135deg, #f6bf09, #d56e2a)")
+                  : "rgba(246,191,9,0.05)",
                 border: "none", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed",
-                color: input.trim() && !isLoading ? "#fff" : "#475569",
+                color: input.trim() && !isLoading ? "#fff" : "#5a380e",
                 fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "all 0.15s",
               }}
@@ -624,12 +777,409 @@ export default function SureBOPage() {
             </button>
           </div>
 
-          <p style={{ fontSize: 10, color: "#334155", textAlign: "center", marginTop: 10, letterSpacing: "0.05em" }}>
+          <p style={{ fontSize: 10, color: "#3d2508", textAlign: "center", marginTop: 10, letterSpacing: "0.05em" }}>
             SureBO may make mistakes. Always verify important claims with official Singapore government sources.
           </p>
         </div>
       </div>
+
+      </div>{/* end right column */}
     </div>
+  );
+}
+
+// ─── Session Sidebar ────────────────────────────────────────────────────────────
+
+interface SessionSidebarProps {
+  open: boolean;
+  sessions: SessionMeta[];
+  folders: ChatFolder[];
+  activeSessionId: string;
+  onToggle: () => void;
+  onNewChat: () => void;
+  onSwitch: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+  onCreateFolder: (name: string) => void;
+  onRenameFolder: (id: string, name: string) => void;
+  onDeleteFolder: (id: string) => void;
+  onToggleFolderCollapse: (id: string) => void;
+  onMoveToFolder: (sessionId: string, folderId: string | undefined) => void;
+}
+
+function SessionSidebar({
+  open, sessions, folders, activeSessionId,
+  onToggle, onNewChat, onSwitch, onRename, onDelete,
+  onCreateFolder, onRenameFolder, onDeleteFolder, onToggleFolderCollapse, onMoveToFolder,
+}: SessionSidebarProps) {
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ id: string; type: "session" | "folder"; x: number; y: number } | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [movingSessionId, setMovingSessionId] = useState<string | null>(null);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    const handler = () => setContextMenu(null);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, []);
+
+  const startRename = (id: string, currentName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setContextMenu(null);
+    setRenamingId(id);
+    setRenameVal(currentName);
+  };
+
+  const commitRename = (id: string, type: "session" | "folder") => {
+    if (renameVal.trim()) {
+      if (type === "session") onRename(id, renameVal.trim());
+      else onRenameFolder(id, renameVal.trim());
+    }
+    setRenamingId(null);
+  };
+
+  const openContextMenu = (e: React.MouseEvent, id: string, type: "session" | "folder") => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ id, type, x: e.clientX, y: e.clientY });
+  };
+
+  // Sessions without a folder
+  const unfoldered = sessions.filter((s) => !s.folderId);
+
+  const sidebarW = open ? 260 : 48;
+
+  return (
+    <div style={{
+      width: sidebarW, minWidth: sidebarW, height: "100vh",
+      background: "rgba(10,5,1,0.98)",
+      borderRight: "1px solid rgba(246,191,9,0.07)",
+      display: "flex", flexDirection: "column",
+      transition: "width 0.2s ease",
+      overflow: "hidden",
+      position: "sticky", top: 0,
+      flexShrink: 0,
+    }}>
+      {/* Toggle + New Chat */}
+      <div style={{
+        display: "flex", alignItems: "center",
+        padding: "14px 10px", gap: 8,
+        borderBottom: "1px solid rgba(246,191,9,0.06)",
+      }}>
+        <button onClick={onToggle} title={open ? "Collapse sidebar" : "Expand sidebar"} style={{
+          width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+          background: "transparent", border: "1px solid rgba(246,191,9,0.1)",
+          color: "#80521f", cursor: "pointer", fontSize: 14,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {open ? "◀" : "▶"}
+        </button>
+        {open && (
+          <button onClick={onNewChat} style={{
+            flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12,
+            background: "rgba(239,51,64,0.1)", border: "1px solid rgba(239,51,64,0.25)",
+            color: "#EF3340", cursor: "pointer", letterSpacing: "0.06em",
+            fontFamily: "inherit", textAlign: "left",
+          }}>
+            + New Chat
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
+          {/* Create folder button */}
+          {creatingFolder ? (
+            <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+              <input
+                autoFocus value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newFolderName.trim()) {
+                    onCreateFolder(newFolderName.trim());
+                    setNewFolderName(""); setCreatingFolder(false);
+                  }
+                  if (e.key === "Escape") { setCreatingFolder(false); setNewFolderName(""); }
+                }}
+                placeholder="Folder name..."
+                style={{
+                  flex: 1, background: "rgba(246,191,9,0.06)",
+                  border: "1px solid rgba(246,191,9,0.15)",
+                  borderRadius: 5, padding: "4px 8px",
+                  color: "#fef2ce", fontSize: 12, outline: "none", fontFamily: "inherit",
+                }}
+              />
+              <button onClick={() => setCreatingFolder(false)} style={{
+                background: "transparent", border: "none", color: "#80521f", cursor: "pointer", fontSize: 14,
+              }}>✕</button>
+            </div>
+          ) : (
+            <button onClick={() => setCreatingFolder(true)} style={{
+              width: "100%", padding: "5px 8px", marginBottom: 6,
+              background: "transparent", border: "1px dashed rgba(246,191,9,0.1)",
+              borderRadius: 6, color: "#5a380e", cursor: "pointer", fontSize: 11,
+              letterSpacing: "0.06em", fontFamily: "inherit", textAlign: "left",
+            }}>
+              📁 New Folder
+            </button>
+          )}
+
+          {/* Folders */}
+          {folders.map((folder) => {
+            const folderSessions = sessions.filter((s) => s.folderId === folder.id);
+            return (
+              <div key={folder.id} style={{ marginBottom: 4 }}>
+                <div
+                  onContextMenu={(e) => openContextMenu(e, folder.id, "folder")}
+                  onClick={() => onToggleFolderCollapse(folder.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "5px 8px", borderRadius: 6, cursor: "pointer",
+                    color: "#c58040", fontSize: 12,
+                    userSelect: "none",
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(246,191,9,0.05)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  <span style={{ fontSize: 10 }}>{folder.collapsed ? "▶" : "▼"}</span>
+                  <span style={{ fontSize: 14 }}>📁</span>
+                  {renamingId === folder.id ? (
+                    <input
+                      autoFocus value={renameVal}
+                      onChange={(e) => setRenameVal(e.target.value)}
+                      onBlur={() => commitRename(folder.id, "folder")}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(folder.id, "folder");
+                        if (e.key === "Escape") setRenamingId(null);
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        flex: 1, background: "rgba(246,191,9,0.1)",
+                        border: "1px solid rgba(246,191,9,0.2)",
+                        borderRadius: 4, padding: "2px 6px",
+                        color: "#fef2ce", fontSize: 12, outline: "none", fontFamily: "inherit",
+                      }}
+                    />
+                  ) : (
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {folder.name}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 10, color: "#5a380e" }}>{folderSessions.length}</span>
+                </div>
+
+                {!folder.collapsed && folderSessions.map((s) => (
+                  <SidebarSession
+                    key={s.id} session={s} active={s.id === activeSessionId}
+                    renamingId={renamingId} renameVal={renameVal}
+                    setRenameVal={setRenameVal}
+                    onSelect={() => onSwitch(s.id)}
+                    onContextMenu={(e) => openContextMenu(e, s.id, "session")}
+                    onCommitRename={() => commitRename(s.id, "session")}
+                    onCancelRename={() => setRenamingId(null)}
+                    indent
+                  />
+                ))}
+              </div>
+            );
+          })}
+
+          {/* Unfoldered sessions */}
+          {unfoldered.length > 0 && (
+            <div style={{ marginTop: folders.length > 0 ? 8 : 0 }}>
+              {folders.length > 0 && (
+                <p style={{ fontSize: 10, color: "#3d2508", letterSpacing: "0.08em", padding: "4px 8px", margin: "0 0 4px" }}>
+                  CHATS
+                </p>
+              )}
+              {unfoldered.map((s) => (
+                <SidebarSession
+                  key={s.id} session={s} active={s.id === activeSessionId}
+                  renamingId={renamingId} renameVal={renameVal}
+                  setRenameVal={setRenameVal}
+                  onSelect={() => onSwitch(s.id)}
+                  onContextMenu={(e) => openContextMenu(e, s.id, "session")}
+                  onCommitRename={() => commitRename(s.id, "session")}
+                  onCancelRename={() => setRenamingId(null)}
+                />
+              ))}
+            </div>
+          )}
+
+          {sessions.length === 0 && (
+            <p style={{ fontSize: 11, color: "#3d2508", textAlign: "center", marginTop: 24, letterSpacing: "0.06em" }}>
+              No chats yet
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed", zIndex: 200,
+            left: Math.min(contextMenu.x, window.innerWidth - 160),
+            top: Math.min(contextMenu.y, window.innerHeight - 120),
+            background: "#1a0b03",
+            border: "1px solid rgba(246,191,9,0.12)",
+            borderRadius: 8, overflow: "hidden", minWidth: 150,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+          }}
+        >
+          {contextMenu.type === "session" ? (
+            <>
+              <CtxItem label="✏️ Rename" onClick={(e) => {
+                const s = sessions.find((x) => x.id === contextMenu.id);
+                if (s) startRename(s.id, s.name, e);
+              }} />
+              {folders.length > 0 && (
+                <CtxItem label="📁 Move to folder" onClick={() => {
+                  setMovingSessionId(contextMenu.id);
+                  setContextMenu(null);
+                }} />
+              )}
+              {sessions.find((s) => s.id === contextMenu.id)?.folderId && (
+                <CtxItem label="↩ Remove from folder" onClick={() => {
+                  onMoveToFolder(contextMenu.id, undefined);
+                  setContextMenu(null);
+                }} />
+              )}
+              <CtxItem label="🗑 Delete" danger onClick={() => {
+                onDelete(contextMenu.id);
+                setContextMenu(null);
+              }} />
+            </>
+          ) : (
+            <>
+              <CtxItem label="✏️ Rename" onClick={(e) => {
+                const f = folders.find((x) => x.id === contextMenu.id);
+                if (f) startRename(f.id, f.name, e);
+              }} />
+              <CtxItem label="🗑 Delete folder" danger onClick={() => {
+                onDeleteFolder(contextMenu.id);
+                setContextMenu(null);
+              }} />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Move-to-folder picker */}
+      {movingSessionId && (
+        <div style={{
+          position: "fixed", zIndex: 200, bottom: 80, left: 10,
+          background: "#1a0b03", border: "1px solid rgba(246,191,9,0.12)",
+          borderRadius: 8, padding: 8, minWidth: 180,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        }}>
+          <p style={{ fontSize: 10, color: "#80521f", letterSpacing: "0.08em", margin: "0 0 6px 4px" }}>MOVE TO FOLDER</p>
+          {folders.map((f) => (
+            <button key={f.id} onClick={() => { onMoveToFolder(movingSessionId, f.id); setMovingSessionId(null); }} style={{
+              display: "block", width: "100%", textAlign: "left",
+              padding: "5px 8px", borderRadius: 5, fontSize: 12,
+              background: "transparent", border: "none", color: "#c58040",
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(246,191,9,0.07)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+            >
+              📁 {f.name}
+            </button>
+          ))}
+          <button onClick={() => setMovingSessionId(null)} style={{
+            display: "block", width: "100%", textAlign: "center",
+            padding: "4px", marginTop: 4, borderRadius: 5, fontSize: 11,
+            background: "transparent", border: "none", color: "#5a380e",
+            cursor: "pointer", fontFamily: "inherit",
+          }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarSession({
+  session, active, renamingId, renameVal, setRenameVal,
+  onSelect, onContextMenu, onCommitRename, onCancelRename, indent,
+}: {
+  session: SessionMeta; active: boolean;
+  renamingId: string | null; renameVal: string;
+  setRenameVal: (v: string) => void;
+  onSelect: () => void; onContextMenu: (e: React.MouseEvent) => void;
+  onCommitRename: () => void; onCancelRename: () => void;
+  indent?: boolean;
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      style={{
+        padding: `5px ${indent ? 24 : 8}px 5px ${indent ? 24 : 8}px`,
+        borderRadius: 6, cursor: "pointer",
+        background: active ? "rgba(239,51,64,0.1)" : "transparent",
+        border: `1px solid ${active ? "rgba(239,51,64,0.2)" : "transparent"}`,
+        marginBottom: 2,
+      }}
+      onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "rgba(246,191,9,0.05)"; }}
+      onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+    >
+      {renamingId === session.id ? (
+        <input
+          autoFocus value={renameVal}
+          onChange={(e) => setRenameVal(e.target.value)}
+          onBlur={onCommitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onCommitRename();
+            if (e.key === "Escape") onCancelRename();
+            e.stopPropagation();
+          }}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "100%", background: "rgba(246,191,9,0.1)",
+            border: "1px solid rgba(246,191,9,0.2)",
+            borderRadius: 4, padding: "2px 6px",
+            color: "#fef2ce", fontSize: 12, outline: "none", fontFamily: "inherit",
+          }}
+        />
+      ) : (
+        <>
+          <p style={{
+            margin: 0, fontSize: 12, color: active ? "#EF3340" : "#c58040",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {session.name}
+          </p>
+          <p style={{ margin: 0, fontSize: 10, color: "#3d2508", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {session.preview}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CtxItem({ label, onClick, danger }: { label: string; onClick: (e: React.MouseEvent) => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "block", width: "100%", textAlign: "left",
+        padding: "8px 12px", border: "none",
+        background: "transparent", cursor: "pointer",
+        color: danger ? "#f87171" : "#c58040",
+        fontSize: 12, fontFamily: "inherit",
+      }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(246,191,9,0.07)"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -652,10 +1202,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <div style={{
         width: 32, height: 32, borderRadius: 8, flexShrink: 0,
         background: isUser
-          ? "linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3))"
+          ? "linear-gradient(135deg, rgba(199,56,92,0.3), rgba(210,96,124,0.3))"
           : "linear-gradient(135deg, rgba(239,51,64,0.2), rgba(220,38,38,0.1))",
         border: "1px solid",
-        borderColor: isUser ? "rgba(99,102,241,0.3)" : "rgba(239,51,64,0.2)",
+        borderColor: isUser ? "rgba(199,56,92,0.3)" : "rgba(239,51,64,0.2)",
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 14, marginTop: 4,
       }}>
@@ -666,10 +1216,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {/* Bubble */}
         <div style={{
           background: isUser
-            ? "rgba(99,102,241,0.08)"
-            : "rgba(226,232,240,0.04)",
+            ? "rgba(199,56,92,0.08)"
+            : "rgba(246,191,9,0.04)",
           border: "1px solid",
-          borderColor: isUser ? "rgba(99,102,241,0.15)" : "rgba(226,232,240,0.06)",
+          borderColor: isUser ? "rgba(199,56,92,0.15)" : "rgba(246,191,9,0.06)",
           borderRadius: isUser ? "12px 4px 12px 12px" : "4px 12px 12px 12px",
           padding: "12px 16px",
           maxWidth: isUser ? "85%" : "100%",
@@ -686,7 +1236,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               ))}
             </div>
           ) : (
-            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: "#e2e8f0", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: "#fef2ce", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               {message.content}
               {message.isStreaming && <span style={{ opacity: 0.5 }}>▌</span>}
             </p>
@@ -697,7 +1247,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {message.detection && <DetectionCard result={message.detection} />}
 
         {/* Timestamp */}
-        <p style={{ fontSize: 10, color: "#334155", marginTop: 4, textAlign: isUser ? "right" : "left", letterSpacing: "0.05em" }}>
+        <p style={{ fontSize: 10, color: "#3d2508", marginTop: 4, textAlign: isUser ? "right" : "left", letterSpacing: "0.05em" }}>
           {message.timestamp.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })}
         </p>
       </div>
@@ -750,7 +1300,7 @@ function DetectionCard({ result }: { result: DetectionResult }) {
             <p style={{ margin: 0, fontWeight: 700, color: cfg.color, fontSize: 13, letterSpacing: "0.08em" }}>
               {cfg.label}
             </p>
-            <p style={{ margin: 0, fontSize: 11, color: "#64748b" }}>
+            <p style={{ margin: 0, fontSize: 11, color: "#80521f" }}>
               {Math.round(result.confidence * 100)}% confidence · {result.processingTimeMs}ms
               {result.wasTranslated && ` · translated from ${result.detectedLanguage}`}
             </p>
@@ -759,7 +1309,7 @@ function DetectionCard({ result }: { result: DetectionResult }) {
 
         {/* Confidence bar + feedback + expand */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <div style={{ width: 80, height: 4, background: "rgba(226,232,240,0.1)", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{ width: 80, height: 4, background: "rgba(246,191,9,0.1)", borderRadius: 2, overflow: "hidden" }}>
             <div style={{ width: `${result.confidence * 100}%`, height: "100%", background: cfg.color, borderRadius: 2 }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -778,7 +1328,7 @@ function DetectionCard({ result }: { result: DetectionResult }) {
               </>
             )}
             <button onClick={() => setExpanded(!expanded)} style={{
-              fontSize: 10, color: "#64748b", background: "transparent",
+              fontSize: 10, color: "#80521f", background: "transparent",
               border: "none", cursor: "pointer", letterSpacing: "0.08em",
             }}>
               {expanded ? "COLLAPSE ▲" : "DETAILS ▼"}
@@ -790,13 +1340,13 @@ function DetectionCard({ result }: { result: DetectionResult }) {
       {/* Expanded Details */}
       {expanded && (
         <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
-          <p style={{ margin: 0, fontSize: 13, color: "#cbd5e1", lineHeight: 1.7 }}>{result.explanation}</p>
+          <p style={{ margin: 0, fontSize: 13, color: "#f8cc3a", lineHeight: 1.7 }}>{result.explanation}</p>
 
           {result.red_flags?.length > 0 && (
             <div>
               <p style={{ margin: "0 0 6px", fontSize: 11, color: "#f87171", letterSpacing: "0.08em" }}>🚩 RED FLAGS</p>
               {result.red_flags.map((f, i) => (
-                <p key={i} style={{ margin: "0 0 3px", fontSize: 12, color: "#94a3b8", paddingLeft: 12 }}>• {f}</p>
+                <p key={i} style={{ margin: "0 0 3px", fontSize: 12, color: "#c58040", paddingLeft: 12 }}>• {f}</p>
               ))}
             </div>
           )}
@@ -805,24 +1355,24 @@ function DetectionCard({ result }: { result: DetectionResult }) {
             <div>
               <p style={{ margin: "0 0 6px", fontSize: 11, color: "#4ade80", letterSpacing: "0.08em" }}>✓ EVIDENCE</p>
               {result.supporting_evidence.map((e, i) => (
-                <p key={i} style={{ margin: "0 0 3px", fontSize: 12, color: "#94a3b8", paddingLeft: 12 }}>• {e}</p>
+                <p key={i} style={{ margin: "0 0 3px", fontSize: 12, color: "#c58040", paddingLeft: 12 }}>• {e}</p>
               ))}
             </div>
           )}
 
           {result.what_to_do && (
-            <div style={{ background: "rgba(226,232,240,0.04)", borderRadius: 6, padding: "8px 10px" }}>
+            <div style={{ background: "rgba(246,191,9,0.04)", borderRadius: 6, padding: "8px 10px" }}>
               <p style={{ margin: "0 0 4px", fontSize: 11, color: "#fbbf24", letterSpacing: "0.08em" }}>💡 WHAT TO DO</p>
-              <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>{result.what_to_do}</p>
+              <p style={{ margin: 0, fontSize: 12, color: "#c58040" }}>{result.what_to_do}</p>
             </div>
           )}
 
           {(result.trusted_sources?.length > 0 || result.related_official_links?.length > 0) && (
             <div>
-              <p style={{ margin: "0 0 6px", fontSize: 11, color: "#64748b", letterSpacing: "0.08em" }}>🔗 SOURCES</p>
+              <p style={{ margin: "0 0 6px", fontSize: 11, color: "#80521f", letterSpacing: "0.08em" }}>🔗 SOURCES</p>
               {[...(result.trusted_sources ?? []), ...(result.related_official_links ?? [])].slice(0, 5).map((src, i) => (
                 <a key={i} href={src.startsWith("http") ? src : `https://${src}`} target="_blank" rel="noopener noreferrer"
-                  style={{ display: "block", fontSize: 11, color: "#6366f1", marginBottom: 3, textDecoration: "none" }}
+                  style={{ display: "block", fontSize: 11, color: "#c7385c", marginBottom: 3, textDecoration: "none" }}
                   onMouseEnter={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
                   onMouseLeave={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
                 >
@@ -855,7 +1405,7 @@ function LoadingDots() {
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 4px; } 
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(226,232,240,0.1); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb { background: rgba(246,191,9,0.2); border-radius: 2px; }
       `}</style>
     </div>
   );
