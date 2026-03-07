@@ -63,7 +63,9 @@ Notable Figures: PM, Ministers, Temasek, GIC leadership
 - User language: {language}
 
 Relevant Singapore news context:
-{context}`;
+{context}
+
+Use ALL sections in the context — [Official & Singapore Sources], [Latest Global & Regional News], and [CURRENT STATUS] — to give the most accurate and up-to-date answer.`;
 
 // ─── Fake News Detection Prompt ───────────────────────────────────────────────
 

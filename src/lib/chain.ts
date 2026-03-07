@@ -79,25 +79,56 @@ function llm(streaming = false, maxTokens = 2000) {
 
 // ─── Context Retrieval (RAG) ──────────────────────────────────────────────────
 
+// Condense long extracted text (transcript/OCR) to a concise search query
+function toSearchQuery(raw: string): string {
+  if (raw.length <= 280) return raw;
+  // Take the first complete sentence or first 280 chars — whichever is shorter
+  const firstSentence = raw.match(/^.{30,280}[.!?]/)?.[0];
+  return (firstSentence ?? raw.slice(0, 280)).trim();
+}
+
+const SG_DOMAINS = [
+  "gov.sg", "moh.gov.sg", "moe.gov.sg", "mas.gov.sg",
+  "cpf.gov.sg", "hdb.gov.sg", "channelnewsasia.com",
+  "straitstimes.com", "todayonline.com", "police.gov.sg",
+  "iras.gov.sg", "nea.gov.sg", "lta.gov.sg", "edb.gov.sg",
+];
+
 async function buildContext(query: string): Promise<string> {
   try {
     const tv = getTavily();
+    const searchQuery = toSearchQuery(query);
 
-    // Run ClickHouse RAG + Tavily web search + past fact-checks in parallel
-    const [articles, pastChecks, webResults] = await Promise.all([
-      searchRelevantArticles(query, 8),  // Increased from 5 for better coverage
-      getSimilarFactChecks(query, 5),    // Increased from 3 to check past verdicts
+    // Three parallel Tavily searches + ClickHouse + past fact-checks
+    const [articles, pastChecks, officialResults, openResults, statusResults] = await Promise.all([
+      searchRelevantArticles(query, 8),
+      getSimilarFactChecks(query, 5),
+
+      // 1. Official SG government + trusted news sources
       tv
-        ? tv.search(`${query} Singapore official`, {
-            maxResults:        8,  // Increased from 5
-            searchDepth:       "advanced",
-            includeAnswer:     true,
-            includeDomains:    [
-              "gov.sg", "moh.gov.sg", "moe.gov.sg", "mas.gov.sg",
-              "cpf.gov.sg", "hdb.gov.sg", "channelnewsasia.com",
-              "straitstimes.com", "todayonline.com", "police.gov.sg",
-              "iras.gov.sg", "nea.gov.sg", "lta.gov.sg", "edb.gov.sg"
-            ],
+        ? tv.search(`${searchQuery} Singapore`, {
+            maxResults:     8,
+            searchDepth:    "advanced",
+            includeAnswer:  true,
+            includeDomains: SG_DOMAINS,
+          }).then((r) => r.results).catch(() => [])
+        : Promise.resolve([]),
+
+      // 2. Open web — no domain restriction, gets global & latest news
+      tv
+        ? tv.search(searchQuery, {
+            maxResults:    6,
+            searchDepth:   "advanced",
+            includeAnswer: true,
+          }).then((r) => r.results).catch(() => [])
+        : Promise.resolve([]),
+
+      // 3. Current status / latest update search
+      tv
+        ? tv.search(`${searchQuery} latest update 2025 2026 current status fact check`, {
+            maxResults:    5,
+            searchDepth:   "advanced",
+            includeAnswer: true,
           }).then((r) => r.results).catch(() => [])
         : Promise.resolve([]),
     ]);
@@ -106,15 +137,31 @@ async function buildContext(query: string): Promise<string> {
       .map(
         (a, i) =>
           `[DB-${i + 1}] "${a.title}" (${a.source_url}, ${new Date(a.published_at).toLocaleDateString("en-SG")})\n` +
-          a.content.slice(0, 700)  // Increased from 600
+          a.content.slice(0, 700)
       )
       .join("\n\n");
 
-    const webBlock =
-      webResults.length > 0
-        ? "\n\n[Official & Recent Web Sources]\n" +
-          webResults
-            .map((r) => `• ${r.title} (${r.url})\n  ${r.content?.slice(0, 500) ?? ""}`)  // Increased context
+    const officialBlock =
+      officialResults.length > 0
+        ? "\n\n[Official & Singapore Sources]\n" +
+          officialResults
+            .map((r) => `• ${r.title} (${r.url})\n  ${r.content?.slice(0, 400) ?? ""}`)
+            .join("\n\n")
+        : "";
+
+    const openBlock =
+      openResults.length > 0
+        ? "\n\n[Latest Global & Regional News]\n" +
+          openResults
+            .map((r) => `• ${r.title} (${r.url})\n  ${r.content?.slice(0, 400) ?? ""}`)
+            .join("\n\n")
+        : "";
+
+    const statusBlock =
+      statusResults.length > 0
+        ? "\n\n[CURRENT STATUS — Latest updates as of today]\n" +
+          statusResults
+            .map((r) => `• ${r.title} (${r.url})\n  ${r.content?.slice(0, 400) ?? ""}`)
             .join("\n\n")
         : "";
 
@@ -126,7 +173,10 @@ async function buildContext(query: string): Promise<string> {
             .join("\n")
         : "";
 
-    return articleBlock + webBlock + pastBlock || "⚠️ No directly relevant Singapore sources found. Use caution interpreting this claim.";
+    return (
+      articleBlock + officialBlock + openBlock + statusBlock + pastBlock ||
+      "⚠️ No directly relevant sources found. Use caution interpreting this claim."
+    );
   } catch (err) {
     console.warn("[RAG] Retrieval error:", err);
     return "⚠️ Context retrieval temporarily unavailable. Analyzing with available knowledge.";

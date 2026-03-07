@@ -190,27 +190,40 @@ export default function SureBOPage() {
 
   // ── Send chat message (streaming) ─────────────────────────────────────────
   const sendChatMessage = useCallback(
-    async (text: string, sessionIdOverride?: string, isRetry = false) => {
+    async (text: string, sessionIdOverride?: string, isRetry = false, silent = false) => {
       const effectiveSessionId = sessionIdOverride ?? activeSessionId;
-      const userMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: text,
-        timestamp: new Date(),
-      };
       const assistantId = crypto.randomUUID();
 
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
+      if (!silent) {
+        const userMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: text,
           timestamp: new Date(),
-          isStreaming: true,
-        },
-      ]);
+        };
+        setMessages((prev) => [
+          ...prev,
+          userMsg,
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            timestamp: new Date(),
+            isStreaming: true,
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            timestamp: new Date(),
+            isStreaming: true,
+          },
+        ]);
+      }
       setIsLoading(true);
 
       try {
@@ -222,7 +235,7 @@ export default function SureBOPage() {
             sessionId: effectiveSessionId,
             stream: true,
             language,
-            isRetry,
+            isRetry: isRetry || silent, // silent = called from extract, user msg already saved
           }),
         });
 
@@ -298,27 +311,40 @@ export default function SureBOPage() {
 
   // ── Run detection ──────────────────────────────────────────────────────────
   const runDetection = useCallback(
-    async (text: string, sessionIdOverride?: string) => {
+    async (text: string, sessionIdOverride?: string, silent = false) => {
       const effectiveSessionId = sessionIdOverride ?? activeSessionId;
-      const userMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: text,
-        timestamp: new Date(),
-      };
       const assistantId = crypto.randomUUID();
 
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
+      if (!silent) {
+        const userMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: text,
           timestamp: new Date(),
-          isStreaming: true,
-        },
-      ]);
+        };
+        setMessages((prev) => [
+          ...prev,
+          userMsg,
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            timestamp: new Date(),
+            isStreaming: true,
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            timestamp: new Date(),
+            isStreaming: true,
+          },
+        ]);
+      }
       setIsLoading(true);
 
       try {
@@ -424,6 +450,24 @@ export default function SureBOPage() {
       ]);
       setIsLoading(true);
 
+      // ── Ensure a session exists before any DB writes ──────────────────────
+      let sessionId = activeSessionId;
+      if (!sessionId) {
+        try {
+          const newRes = await fetch("/api/chat/new", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ topic: sourceLabel.slice(0, 80) }),
+          });
+          const newData = await newRes.json() as { session_id?: string };
+          sessionId = newData.session_id ?? crypto.randomUUID();
+        } catch {
+          sessionId = crypto.randomUUID();
+        }
+        setActiveSessionIdState(sessionId);
+        setSessions((prev) => [{ id: sessionId, name: sourceLabel.slice(0, 80) }, ...prev]);
+      }
+
       try {
         let res: Response;
         if (url) {
@@ -461,27 +505,27 @@ export default function SureBOPage() {
           )
         );
 
-        // Persist the file-upload notification and extraction summary to ClickHouse
-        if (activeSessionId) {
-          fetch("/api/chat/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              session_id: activeSessionId,
-              messages: [
-                { role: "user",      content: userContent },
-                { role: "assistant", content: extractSummary },
-              ],
-            }),
-          }).catch(() => {});
-        }
+        // Persist the upload label + extraction summary — await so they land
+        // in DB before the AI chain runs and saves its response after them.
+        await fetch("/api/chat/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            messages: [
+              { role: "user",      content: userContent },
+              { role: "assistant", content: extractSummary },
+            ],
+          }),
+        }).catch(() => {});
 
         if (mode === "detect") {
-          await runDetection((text as string).slice(0, 4000));
+          await runDetection((text as string).slice(0, 4000), sessionId, true);
         } else {
           await sendChatMessage(
             `I have extracted the following content from ${meta.label} (${sourceLabel}). ` +
-              `Please help me understand and verify the key claims:\n\n${(text as string).slice(0, 3000)}`
+              `Please help me understand and verify the key claims:\n\n${(text as string).slice(0, 3000)}`,
+            sessionId, false, true
           );
         }
       } catch (err) {
