@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }              from "next/server";
+import { safeError }                              from "@/lib/errors";
 import { translateText, detectLang, LANG_LABELS, type SupportedLang } from "@/lib/translation";
 
 export const runtime     = "nodejs";

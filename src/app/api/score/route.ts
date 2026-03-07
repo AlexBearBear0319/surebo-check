@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { scoreTrace } from "@/lib/langfuse";
+import { safeError } from "@/lib/errors";
 
 export const runtime     = "nodejs";
 export const maxDuration = 10;

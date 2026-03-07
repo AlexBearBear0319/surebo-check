@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sbSaveMessage, sbBumpSession } from "@/lib/supabase";
 import { runChat } from "@/lib/chain";
+import { safeError } from "@/lib/errors";
 
 export const runtime     = "nodejs";
 export const maxDuration = 60;

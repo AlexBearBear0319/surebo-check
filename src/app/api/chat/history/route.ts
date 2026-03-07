@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sbGetHistory } from "@/lib/supabase";
+import { safeError } from "@/lib/errors";
 
 export const runtime     = "nodejs";
 export const maxDuration = 30;
