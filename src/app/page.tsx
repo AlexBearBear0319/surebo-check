@@ -10,16 +10,6 @@ import { SessionSidebar } from "@/components/SessionSidebar";
 import { MessageBubble } from "@/components/MessageBubble";
 import { InputBar } from "@/components/InputBar";
 import { LANGUAGE_LABELS, CONTENT_TYPE_LABEL, QUICK_EXAMPLES } from "@/config/ui";
-import {
-  LS_SESSIONS,
-  lsGet,
-  lsSet,
-  lsMsgsKey,
-  loadMsgs,
-  saveMsgs,
-  newSessionId,
-  buildSessionEntry,
-} from "@/lib/session-store";
 import type { ChatMessage, DetectionResult, Language, Mode, SessionMeta } from "@/types";
 
 // ─── Page component ─────────────────────────────────────────────────────────────
@@ -29,15 +19,20 @@ export default function SureBOPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionCreating, setSessionCreating] = useState(false);
   const [language, setLanguage] = useState<Language>("en");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
 
+  // ── New-chat modal
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newChatInput, setNewChatInput] = useState("");
+  const newChatInputRef = useRef<HTMLTextAreaElement>(null);
+
   // ── Session store ──────────────────────────────────────────────────────────
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
-  const [activeSessionId, setActiveSessionIdState] = useState<string>(() =>
-    newSessionId()
-  );
+  const [activeSessionId, setActiveSessionIdState] = useState<string>("");
+  const [sessionsLoading, setSessionsLoading] = useState(true);
 
   // Auto-collapse sidebar on mobile
   useEffect(() => {
@@ -60,64 +55,129 @@ export default function SureBOPage() {
     }
   }, [languageDropdownOpen]);
 
-  useEffect(() => {
-    setSessions(lsGet<SessionMeta[]>(LS_SESSIONS, []));
+  // Fetch session list and auto-select/create a session so there is always an
+  // active session when the page loads.
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/chat/list");
+      const data = await res.json() as { sessions: { session_id: string; topic: string }[] };
+      const list = (data.sessions ?? []).map((s) => ({ id: s.session_id, name: s.topic }));
+      setSessions(list);
+
+      if (list.length > 0) {
+        // Auto-select the most recent session and load its history
+        setActiveSessionIdState(list[0].id);
+        // Load history in background — use a separate fetch so isLoading stays false
+        fetch(`/api/chat/history?sessionId=${encodeURIComponent(list[0].id)}`)
+          .then((r) => r.json())
+          .then((d: { messages?: { role: string; content: string; created_at: string }[] }) => {
+            const loaded: import("@/types").ChatMessage[] = (d.messages ?? []).map((m) => ({
+              id: crypto.randomUUID(),
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: new Date(m.created_at),
+            }));
+            // If the last DB message is a user turn, the AI never responded — inject failed placeholder
+            if (loaded.length > 0 && loaded[loaded.length - 1].role === "user") {
+              loaded.push({
+                id: crypto.randomUUID(),
+                role: "assistant" as const,
+                content: "",
+                timestamp: new Date(),
+                hasFailed: true,
+              });
+            }
+            setMessages(loaded);
+          })
+          .catch(() => {/* history unavailable — start fresh */});
+      } else {
+        // No sessions yet — show empty state; user starts via the “+ New” button.
+        setActiveSessionIdState("");
+      }
+    } catch {
+      // DB unavailable – still allow chatting with a transient local ID
+      setActiveSessionIdState(crypto.randomUUID());
+    } finally {
+      setSessionsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    lsSet(LS_SESSIONS, sessions);
-  }, [sessions]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-    saveMsgs(activeSessionId, messages);
-
-    const firstUser = messages.find((m) => m.role === "user");
-    if (firstUser) {
-      setSessions((prev) => {
-        const existing = prev.find((s) => s.id === activeSessionId);
-        const entry = buildSessionEntry(activeSessionId, firstUser.content, existing);
-        if (existing) {
-          return prev.map((s) => (s.id === activeSessionId ? entry : s));
-        }
-        return [entry, ...prev];
-      });
-    }
-  }, [messages, activeSessionId]);
+    fetchSessions();
+  }, [fetchSessions]);
 
   // ── Session actions ────────────────────────────────────────────────────────
+  // Opens the new-chat modal. Blocked while one is already open.
   const newChat = useCallback(() => {
-    const id = newSessionId();
-    setActiveSessionIdState(id);
-    setMessages([]);
-    setInput("");
-  }, []);
+    if (showNewChatModal) return;
+    setNewChatInput("");
+    setShowNewChatModal(true);
+  }, [showNewChatModal]);
 
-  const switchSession = useCallback((id: string) => {
+  // Called when the user submits the first message from the modal.
+  // Declared later (after sendChatMessage + runDetection) — see submitNewChat below.
+
+  const switchSession = useCallback(async (id: string) => {
     setActiveSessionIdState(id);
-    setMessages(loadMsgs(id));
     setInput("");
-    // Close sidebar on mobile after switching
-    if (window.innerWidth <= 768) {
-      setSidebarOpen(false);
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(id)}`);
+      const data = await res.json() as {
+        messages: { role: string; content: string; created_at: string }[];
+      };
+      const loaded: import("@/types").ChatMessage[] = (data.messages ?? []).map((m) => ({
+        id: crypto.randomUUID(),
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        timestamp: new Date(m.created_at),
+      }));
+      // Orphaned user message (no AI response) — inject failed placeholder
+      if (loaded.length > 0 && loaded[loaded.length - 1].role === "user") {
+        loaded.push({
+          id: crypto.randomUUID(),
+          role: "assistant" as const,
+          content: "",
+          timestamp: new Date(),
+          hasFailed: true,
+        });
+      }
+      setMessages(loaded);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  const renameSession = useCallback((id: string, name: string) => {
+  const renameSession = useCallback(async (id: string, name: string) => {
+    // Optimistic update
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, name } : s))
     );
-  }, []);
+    await fetch("/api/chat/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: id, topic: name }),
+    }).catch(() => {
+      // revert on failure by re-fetching
+      fetchSessions();
+    });
+  }, [fetchSessions]);
 
   const deleteSession = useCallback(
-    (id: string) => {
+    async (id: string) => {
+      // Optimistic update
       setSessions((prev) => prev.filter((s) => s.id !== id));
-      try {
-        localStorage.removeItem(lsMsgsKey(id));
-      } catch {}
-      if (id === activeSessionId) newChat();
+      if (id === activeSessionId) {
+        setMessages([]);
+        setActiveSessionIdState("");
+      }
+      await fetch("/api/chat/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: id }),
+      }).catch(() => fetchSessions());
     },
-    [activeSessionId, newChat]
+    [activeSessionId, fetchSessions]
   );
 
   // ── Refs ───────────────────────────────────────────────────────────────────
@@ -130,7 +190,8 @@ export default function SureBOPage() {
 
   // ── Send chat message (streaming) ─────────────────────────────────────────
   const sendChatMessage = useCallback(
-    async (text: string) => {
+    async (text: string, sessionIdOverride?: string) => {
+      const effectiveSessionId = sessionIdOverride ?? activeSessionId;
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -158,7 +219,7 @@ export default function SureBOPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: text,
-            sessionId: activeSessionId,
+            sessionId: effectiveSessionId,
             stream: true,
             language,
           }),
@@ -195,19 +256,35 @@ export default function SureBOPage() {
                       : m
                   )
                 );
+              } else if (parsed.type === "error") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          content: parsed.message ?? "Sorry, something went wrong. Please try again.",
+                          isStreaming: false,
+                        }
+                      : m
+                  )
+                );
               }
             } catch {}
           }
         }
+        // Ensure the assistant message is always finalized even if the `done` event was missed
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId && m.isStreaming
+              ? { ...m, isStreaming: false }
+              : m
+          )
+        );
       } catch {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? {
-                  ...m,
-                  content: "Sorry, something went wrong. Please try again.",
-                  isStreaming: false,
-                }
+              ? { ...m, content: "", isStreaming: false, hasFailed: true }
               : m
           )
         );
@@ -220,7 +297,8 @@ export default function SureBOPage() {
 
   // ── Run detection ──────────────────────────────────────────────────────────
   const runDetection = useCallback(
-    async (text: string) => {
+    async (text: string, sessionIdOverride?: string) => {
+      const effectiveSessionId = sessionIdOverride ?? activeSessionId;
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -248,7 +326,7 @@ export default function SureBOPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             claim: text,
-            sessionId: activeSessionId,
+            sessionId: effectiveSessionId,
             language,
             localise: language !== "en",
           }),
@@ -275,11 +353,7 @@ export default function SureBOPage() {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? {
-                  ...m,
-                  content: "Detection failed. Please try again.",
-                  isStreaming: false,
-                }
+              ? { ...m, content: "", isStreaming: false, hasFailed: true }
               : m
           )
         );
@@ -290,18 +364,53 @@ export default function SureBOPage() {
     [activeSessionId, language]
   );
 
+  // Called when the user submits the first message from the new-chat modal.
+  const submitNewChat = useCallback(async () => {
+    const text = newChatInput.trim();
+    if (!text || isLoading) return;
+
+    setShowNewChatModal(false);
+    setMessages([]);
+    setInput("");
+    setIsLoading(true);
+
+    // Create the session in DB now that there is real content.
+    // Use the first message as the session topic (truncated).
+    const topic = text.length > 80 ? text.slice(0, 79) + "\u2026" : text;
+    let sessionId: string;
+    try {
+      const res = await fetch("/api/chat/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic }),
+      });
+      const data = await res.json() as { session_id?: string };
+      sessionId = data.session_id ?? crypto.randomUUID();
+    } catch {
+      sessionId = crypto.randomUUID();
+    }
+
+    setActiveSessionIdState(sessionId);
+    setSessions((prev) => [{ id: sessionId, name: topic }, ...prev]);
+    setIsLoading(false);
+
+    if (mode === "detect") await runDetection(text, sessionId);
+    else await sendChatMessage(text, sessionId);
+  }, [newChatInput, isLoading, mode, runDetection, sendChatMessage]);
+
   // ── Extract URL / file then detect or chat ─────────────────────────────────
   const handleExtract = useCallback(
     async (file?: File, url?: string) => {
       const sourceLabel = file ? file.name : (url ?? "");
       const assistantId = crypto.randomUUID();
+      const userContent = file ? `Uploaded: ${file.name}` : `🔗 ${url}`;
 
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "user",
-          content: file ? `Uploaded: ${file.name}` : `🔗 ${url}`,
+          content: userContent,
           timestamp: new Date(),
         },
         {
@@ -351,6 +460,21 @@ export default function SureBOPage() {
           )
         );
 
+        // Persist the file-upload notification and extraction summary to ClickHouse
+        if (activeSessionId) {
+          fetch("/api/chat/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: activeSessionId,
+              messages: [
+                { role: "user",      content: userContent },
+                { role: "assistant", content: extractSummary },
+              ],
+            }),
+          }).catch(() => {});
+        }
+
         if (mode === "detect") {
           await runDetection((text as string).slice(0, 4000));
         } else {
@@ -375,17 +499,36 @@ export default function SureBOPage() {
         setIsLoading(false);
       }
     },
-    [mode, runDetection, sendChatMessage]
+    [mode, runDetection, sendChatMessage, activeSessionId]
   );
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
+
+    // Give immediate visual feedback — disable input and show spinner
+    setIsLoading(true);
     setInput("");
-    if (mode === "detect") await runDetection(text);
-    else await sendChatMessage(text);
-  }, [input, isLoading, mode, runDetection, sendChatMessage]);
+
+    // Ensure a session exists before sending
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      try {
+        const res = await fetch("/api/chat/new", { method: "POST" });
+        const data = await res.json() as { session_id: string };
+        sessionId = data.session_id || crypto.randomUUID();
+      } catch {
+        sessionId = crypto.randomUUID();
+      }
+      setActiveSessionIdState(sessionId);
+      setSessions((prev) => [{ id: sessionId, name: "New Chat" }, ...prev]);
+    }
+
+    // Pass the resolved sessionId directly to avoid stale closure
+    if (mode === "detect") await runDetection(text, sessionId);
+    else await sendChatMessage(text, sessionId);
+  }, [input, isLoading, mode, activeSessionId, runDetection, sendChatMessage]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -412,7 +555,9 @@ export default function SureBOPage() {
       <SessionSidebar
         open={sidebarOpen}
         sessions={sessions}
+        loading={sessionsLoading || sessionCreating}
         activeSessionId={activeSessionId}
+        newChatDisabled={showNewChatModal}
         onToggle={() => setSidebarOpen((v) => !v)}
         onNewChat={newChat}
         onSwitch={switchSession}
@@ -708,8 +853,19 @@ export default function SureBOPage() {
               gap: 16,
             }}
           >
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+            {messages.map((msg, idx) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onRetry={msg.hasFailed ? () => {
+                  const prevUser = messages.slice(0, idx).reverse().find((m) => m.role === "user");
+                  if (prevUser) {
+                    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                    if (mode === "detect") runDetection(prevUser.content);
+                    else sendChatMessage(prevUser.content);
+                  }
+                } : undefined}
+              />
             ))}
             <div ref={messagesEndRef} />
           </div>
@@ -726,6 +882,111 @@ export default function SureBOPage() {
           inputRef={inputRef}
         />
       </div>
+
+      {/* ── New-chat modal ── */}
+      {showNewChatModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setShowNewChatModal(false)}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: 16,
+              padding: 32,
+              width: "100%",
+              maxWidth: 520,
+              margin: "0 16px",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 20,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 700, color: "#111827" }}>
+                Start a new chat
+              </h2>
+              <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
+                What would you like to verify or discuss?
+              </p>
+            </div>
+
+            <textarea
+              ref={newChatInputRef}
+              value={newChatInput}
+              onChange={(e) => setNewChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitNewChat(); }
+                if (e.key === "Escape") setShowNewChatModal(false);
+              }}
+              placeholder="e.g. Is it true that MRT fares are increasing?"
+              rows={3}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: "1.5px solid #e5e7eb",
+                fontSize: 15,
+                fontFamily: "inherit",
+                resize: "none",
+                outline: "none",
+                color: "#111827",
+                boxSizing: "border-box",
+              }}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+            />
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowNewChatModal(false)}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  border: "1px solid #e5e7eb",
+                  background: "#f9fafb",
+                  color: "#374151",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitNewChat}
+                disabled={!newChatInput.trim() || isLoading}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: newChatInput.trim() && !isLoading ? "#3b82f6" : "#bfdbfe",
+                  color: "#ffffff",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: newChatInput.trim() && !isLoading ? "pointer" : "not-allowed",
+                  fontFamily: "inherit",
+                  transition: "background 0.2s",
+                }}
+              >
+                Start Chat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

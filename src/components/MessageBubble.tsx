@@ -4,15 +4,26 @@
 
 "use client";
 
+import { useState } from "react";
 import { DetectionCard } from "./DetectionCard";
 import type { ChatMessage } from "@/types";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onRetry?: () => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!message.content) return;
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
 
   return (
     <div
@@ -48,16 +59,23 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {/* ── Speech bubble ── */}
         <div
           style={{
-            background: isUser ? "#eff6ff" : "#f9fafb",
+            background: message.hasFailed ? "#fff1f2" : isUser ? "#eff6ff" : "#f9fafb",
             border: "1px solid",
-            borderColor: isUser ? "#bfdbfe" : "#e5e7eb",
+            borderColor: message.hasFailed ? "#fecdd3" : isUser ? "#bfdbfe" : "#e5e7eb",
             borderRadius: "12px",
             padding: "12px 14px",
             maxWidth: "85%",
             marginLeft: isUser ? "auto" : 0,
           }}
         >
-          {message.isStreaming && !message.content ? (
+          {message.hasFailed ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>⚠️</span>
+              <span style={{ color: "#dc2626", fontSize: 14, fontWeight: 500 }}>
+                Analysis failed — response not received.
+              </span>
+            </div>
+          ) : message.isStreaming && !message.content ? (
             /* Typing indicator – three pulsing dots */
             <div
               style={{
@@ -119,6 +137,71 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             minute: "2-digit",
           })}
         </p>
+
+        {/* ── Action bar (copy + retry) — shown under every finalised message ── */}
+        {!message.isStreaming && (
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              marginTop: 2,
+              justifyContent: isUser ? "flex-end" : "flex-start",
+            }}
+          >
+            {/* Copy button — only if there's content */}
+            {message.content && (
+              <button
+                onClick={handleCopy}
+                title="Copy"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                  background: "transparent",
+                  color: "#9ca3af",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#6b7280"; (e.currentTarget as HTMLElement).style.background = "#f3f4f6"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#9ca3af"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              >
+                {copied ? "✓ Copied" : "⎘ Copy"}
+              </button>
+            )}
+
+            {/* Retry button — only on failed AI messages */}
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                title="Retry"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #fca5a5",
+                  background: "transparent",
+                  color: "#dc2626",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#fff1f2"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              >
+                ↺ Retry
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

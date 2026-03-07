@@ -5,11 +5,8 @@ export type Mode = "chat" | "detect";
 export type Language = "en" | "ms" | "zh" | "ta";
 
 export interface SessionMeta {
-  id: string;
-  name: string;
-  createdAt: number;
-  updatedAt: number;
-  preview: string;
+  id: string;       // maps to session_id
+  name: string;     // maps to topic (used as display label)
 }
 
 export interface DetectionResult {
@@ -35,4 +32,5 @@ export interface ChatMessage {
   timestamp: Date;
   detection?: DetectionResult;
   isStreaming?: boolean;
+  hasFailed?: boolean;   // true when no AI response was received for this message
 }

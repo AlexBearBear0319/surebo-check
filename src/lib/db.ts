@@ -1,97 +1,23 @@
 /**
  * src/lib/db.ts
  *
- * Schema initialisation, types, and all query helpers for SureBO.
- * Uses the `clickhouse` client exported from ./clickhouse (untouched).
- *
- * Tables:
- *   news_articles   — verified SG news for RAG retrieval
- *   fact_checks     — audit trail of every detection run
- *   chat_sessions   — persistent conversation memory
- *   trending_claims — leaderboard of most-checked claims
+ * All query helpers for SureBO.
+ * news_articles  →  Supabase `known_articles`
+ * fact_checks    →  no-op stubs (table not yet in Supabase)
+ * trending_claims → no-op stubs (table not yet in Supabase)
+ * chat_sessions / chat_history → Supabase via supabase.ts helpers
  */
 
-import { clickhouse } from './clickhouse';
+import { supabase } from './supabase';
 
-// ─── Schema Init ──────────────────────────────────────────────────────────────
-
-export async function initializeSchema(): Promise<void> {
-  await clickhouse.exec({
-    query: `
-      CREATE TABLE IF NOT EXISTS news_articles (
-        id           UUID     DEFAULT generateUUIDv4(),
-        title        String,
-        content      String,
-        source       String,
-        url          String,
-        published_at DateTime,
-        language     String   DEFAULT 'en',
-        category     LowCardinality(String),
-        is_verified  UInt8    DEFAULT 1,
-        created_at   DateTime DEFAULT now()
-      ) ENGINE = MergeTree()
-      ORDER BY (published_at, source)
-    `,
-  });
-
-  await clickhouse.exec({
-    query: `
-      CREATE TABLE IF NOT EXISTS fact_checks (
-        id            UUID     DEFAULT generateUUIDv4(),
-        claim         String,
-        verdict       LowCardinality(String),
-        confidence    Float32,
-        explanation   String,
-        sources       Array(String),
-        language      LowCardinality(String),
-        original_lang LowCardinality(String),
-        session_id    String,
-        created_at    DateTime DEFAULT now()
-      ) ENGINE = MergeTree()
-      ORDER BY (created_at, verdict)
-    `,
-  });
-
-  await clickhouse.exec({
-    query: `
-      CREATE TABLE IF NOT EXISTS chat_sessions (
-        session_id  String,
-        role        LowCardinality(String),
-        content     String,
-        metadata    String   DEFAULT '{}',
-        created_at  DateTime DEFAULT now()
-      ) ENGINE = MergeTree()
-      ORDER BY (session_id, created_at)
-    `,
-  });
-
-  await clickhouse.exec({
-    query: `
-      CREATE TABLE IF NOT EXISTS trending_claims (
-        claim       String,
-        check_count UInt32   DEFAULT 1,
-        verdict     LowCardinality(String),
-        last_seen   DateTime DEFAULT now()
-      ) ENGINE = ReplacingMergeTree(last_seen)
-      ORDER BY claim
-    `,
-  });
-
-  console.log('[DB] Schema ready ✓');
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────────────
 
 export interface NewsArticle {
-  id?:          string;
+  id?:          string | number;
   title:        string;
   content:      string;
-  source:       string;
-  url:          string;
+  source_url:   string;   // mapped from known_articles.source_url
   published_at: string;
-  language:     string;
-  category:     string;
-  is_verified:  number;
 }
 
 export interface FactCheckRecord {
@@ -129,172 +55,96 @@ export async function searchRelevantArticles(
 
   if (keywords.length === 0) return [];
 
-  const conditions = keywords
-    .map((_, i) =>
-      `(hasTokenCaseInsensitive(title, {kw${i}: String}) OR hasTokenCaseInsensitive(content, {kw${i}: String}))`,
-    )
-    .join(' OR ');
+  // Build OR filter: ilike on title OR content for each keyword
+  const filter = keywords
+    .map((kw) => `title.ilike.%${kw}%,content.ilike.%${kw}%`)
+    .join(',');
 
-  const params: Record<string, string | number> = { limit };
-  keywords.forEach((kw, i) => { params[`kw${i}`] = kw; });
+  const { data, error } = await supabase
+    .from('known_articles')
+    .select('id, title, content, source_url, published_at')
+    .or(filter)
+    .order('published_at', { ascending: false })
+    .limit(limit);
 
-  const result = await clickhouse.query({
-    query: `
-      SELECT id, title, content, source, url, published_at, language, category
-      FROM   news_articles
-      WHERE  is_verified = 1 AND (${conditions})
-      ORDER  BY published_at DESC
-      LIMIT  {limit: UInt32}
-    `,
-    query_params: params,
-    format: 'JSONEachRow',
-  });
-
-  return result.json<NewsArticle[]>();
+  if (error) {
+    console.warn('[DB] searchRelevantArticles error:', error.message);
+    return [];
+  }
+  return (data ?? []) as NewsArticle[];
 }
 
 export async function getRecentArticles(
-  category?: string,
   limit = 10,
 ): Promise<NewsArticle[]> {
-  const result = await clickhouse.query({
-    query: `
-      SELECT id, title, content, source, url, published_at, language, category
-      FROM   news_articles
-      WHERE  is_verified = 1
-        ${category ? 'AND category = {category: String}' : ''}
-      ORDER  BY published_at DESC
-      LIMIT  {limit: UInt32}
-    `,
-    query_params: category ? { category, limit } : { limit },
-    format: 'JSONEachRow',
-  });
+  const { data, error } = await supabase
+    .from('known_articles')
+    .select('id, title, content, source_url, published_at')
+    .order('published_at', { ascending: false })
+    .limit(limit);
 
-  return result.json<NewsArticle[]>();
+  if (error) {
+    console.warn('[DB] getRecentArticles error:', error.message);
+    return [];
+  }
+  return (data ?? []) as NewsArticle[];
 }
 
 export async function insertArticles(
   articles: Omit<NewsArticle, 'id'>[],
 ): Promise<void> {
-  await clickhouse.insert({
-    table: 'news_articles',
-    values: articles,
-    format: 'JSONEachRow',
-  });
+  const { error } = await supabase.from('known_articles').insert(articles);
+  if (error) throw error;
 }
 
 // ─── Fact Checks ──────────────────────────────────────────────────────────────
 
-export async function saveFactCheck(record: FactCheckRecord): Promise<void> {
-  await clickhouse.insert({
-    table: 'fact_checks',
-    values: [record],
-    format: 'JSONEachRow',
-  });
+export async function saveFactCheck(_record: FactCheckRecord): Promise<void> {
+  // TODO: create fact_checks table in Supabase and insert here
 }
 
 export async function getSimilarFactChecks(
-  claim: string,
-  limit = 3,
+  _claim: string,
+  _limit = 3,
 ): Promise<FactCheckRecord[]> {
-  const kws = claim.split(/\s+/).filter((w) => w.length > 3).slice(0, 4);
-  if (kws.length === 0) return [];
-
-  const conditions = kws
-    .map((_, i) => `hasTokenCaseInsensitive(claim, {kw${i}: String})`)
-    .join(' OR ');
-
-  const params: Record<string, string | number> = { limit };
-  kws.forEach((kw, i) => { params[`kw${i}`] = kw; });
-
-  const result = await clickhouse.query({
-    query: `
-      SELECT claim, verdict, confidence, explanation, sources, language
-      FROM   fact_checks
-      WHERE  ${conditions}
-      ORDER  BY created_at DESC
-      LIMIT  {limit: UInt32}
-    `,
-    query_params: params,
-    format: 'JSONEachRow',
-  });
-
-  return result.json<FactCheckRecord[]>();
+  return [];
 }
 
 export async function getVerdictStats(): Promise<
   Array<{ verdict: string; count: number }>
 > {
-  const result = await clickhouse.query({
-    query: `
-      SELECT verdict, count() AS count
-      FROM   fact_checks
-      WHERE  created_at >= now() - INTERVAL 7 DAY
-      GROUP  BY verdict
-      ORDER  BY count DESC
-    `,
-    format: 'JSONEachRow',
-  });
-  return result.json();
+  return [];
 }
 
-// ─── Chat Sessions ────────────────────────────────────────────────────────────
+// ─── Chat Sessions (Postgres) ─────────────────────────────────────────────────
+// These functions are thin wrappers kept for backward-compat with any callers
+// that import from db.ts. The actual implementation lives in lib/postgres.ts.
+
+import { sbSaveMessage, sbGetHistory } from './supabase';
 
 export async function saveChatMessage(msg: ChatMessageRow): Promise<void> {
-  await clickhouse.insert({
-    table: 'chat_sessions',
-    values: [{ ...msg, metadata: JSON.stringify(msg.metadata ?? {}) }],
-    format: 'JSONEachRow',
-  });
+  await sbSaveMessage(msg.session_id, msg.role, msg.content);
 }
 
 export async function getChatHistory(
   sessionId: string,
   limit = 20,
 ): Promise<ChatMessageRow[]> {
-  const result = await clickhouse.query({
-    query: `
-      SELECT session_id, role, content, metadata
-      FROM   chat_sessions
-      WHERE  session_id = {sessionId: String}
-      ORDER  BY created_at ASC
-      LIMIT  {limit: UInt32}
-    `,
-    query_params: { sessionId, limit },
-    format: 'JSONEachRow',
-  });
-
-  const rows = await result.json<Array<ChatMessageRow & { metadata: string }>>();
-  return rows.map((r) => ({ ...r, metadata: JSON.parse(r.metadata) }));
+  const rows = await sbGetHistory(sessionId, limit);
+  return rows.map((r) => ({ session_id: sessionId, role: r.role === "ai" ? "assistant" : r.role as "user" | "assistant", content: r.content }));
 }
 
 // ─── Trending Claims ──────────────────────────────────────────────────────────
 
 export async function getTrendingClaims(
-  limit = 5,
+  _limit = 5,
 ): Promise<Array<{ claim: string; check_count: number; verdict: string }>> {
-  const result = await clickhouse.query({
-    query: `
-      SELECT claim, check_count, verdict
-      FROM   trending_claims
-      ORDER  BY check_count DESC, last_seen DESC
-      LIMIT  {limit: UInt32}
-    `,
-    query_params: { limit },
-    format: 'JSONEachRow',
-  });
-  return result.json();
+  return [];
 }
 
 export async function upsertTrendingClaim(
-  claim: string,
-  verdict: string,
+  _claim: string,
+  _verdict: string,
 ): Promise<void> {
-  await clickhouse.exec({
-    query: `
-      INSERT INTO trending_claims (claim, check_count, verdict, last_seen)
-      VALUES ({claim: String}, 1, {verdict: String}, now())
-    `,
-    query_params: { claim, verdict },
-  });
+  // TODO: create trending_claims table in Supabase
 }
