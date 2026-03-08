@@ -58,57 +58,155 @@ async function extractYouTube(videoId: string): Promise<{ text: string; title: s
   const { YoutubeTranscript } = await import("youtube-transcript");
   let items: { text: string }[];
   try {
-    items = await YoutubeTranscript.fetchTranscript(videoId);
-  } catch {
+    console.log(`[YouTube] Fetching transcript for video ID: ${videoId}`);
+    // Try multiple language options
+    try {
+      items = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
+      console.log(`[YouTube] Successfully fetched English transcript - ${items.length} items`);
+    } catch {
+      // Try without language constraint (gets any available captions)
+      items = await YoutubeTranscript.fetchTranscript(videoId);
+      console.log(`[YouTube] Successfully fetched transcript in any language - ${items.length} items`);
+    }
+  } catch (err) {
+    console.error(`[YouTube] Transcript fetch failed for ${videoId}:`, err);
     // No captions available — fall back to fetching the page for title/description
-    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: { "User-Agent": "SureBO/1.0 fact-checker" },
-    });
-    const html  = await pageRes.text();
-    const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim()
-                  ?? `YouTube video ${videoId}`;
-    const desc  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
-                  ?.replace(/\\n/g, " ").replace(/\\"/g, '"').slice(0, 2000) ?? "";
-    return {
-      text:  `[No captions available] Title: ${title}. ${desc}`,
-      title,
-    };
+    try {
+      const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: { 
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          "Accept-Language": "en-US,en;q=0.9"
+        },
+      });
+      const html  = await pageRes.text();
+      const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim()
+                    ?? `YouTube video ${videoId}`;
+      const desc  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
+                    ?.replace(/\\n/g, " ").replace(/\\"/g, '"').slice(0, 2000) ?? "";
+      console.log(`[YouTube] Fallback to page scrape - Title: ${title}`);
+      return {
+        text:  `[No captions/transcript available for this video]\n\nTitle: ${title}\n\nDescription: ${desc || "No description available"}\n\nNote: This video does not have English captions enabled, or captions are unavailable. Please provide the claim text manually or try a different source.`,
+        title,
+      };
+    } catch (fallbackErr) {
+      console.error(`[YouTube] Fallback page scrape also failed:`, fallbackErr);
+      throw new Error(`Unable to extract YouTube content for video ${videoId}. The video may be private, deleted, or blocked. Error: ${err}`);
+    }
   }
   const text = items.map((i) => i.text).join(" ").trim();
+  console.log(`[YouTube] Joined transcript text length: ${text.length}`);
+  console.log(`[YouTube] First 200 chars: "${text.slice(0, 200)}"`);
+  
+  // Validate we actually got content
+  if (!text || text.length < 50) {
+    console.warn(`[YouTube] Transcript content is empty or too short (${text.length} chars). Items count: ${items.length}`);
+    if (items.length > 0) {
+      console.warn(`[YouTube] Sample items:`, items.slice(0, 3));
+    }
+    // Fall back to fetching page for description
+    try {
+      const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: { 
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          "Accept-Language": "en-US,en;q=0.9"
+        },
+      });
+      const html  = await pageRes.text();
+      const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim()
+                    ?? `YouTube video ${videoId}`;
+      const desc  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
+                    ?.replace(/\\n/g, " ").replace(/\\"/g, '"').slice(0, 2000) ?? "";
+      
+      if (desc && desc.length > 50) {
+        console.log(`[YouTube] Using description as fallback - Title: ${title}`);
+        return {
+          text: `Title: ${title}\n\nDescription: ${desc}\n\n[Note: Full transcript not available, using video description]`,
+          title,
+        };
+      }
+      
+      throw new Error(`Video has no transcript and no description available`);
+    } catch (err2) {
+      console.error(`[YouTube] Description fallback also failed:`, err2);
+      throw new Error(`Unable to extract content from YouTube video ${videoId}. The video may not have captions enabled, or captions may be in a non-English language. Please manually transcribe or summarize the key claims from the video.`);
+    }
+  }
+  
   // Best-effort title from the page
   let title = `YouTube video ${videoId}`;
   try {
     const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: { "User-Agent": "SureBO/1.0 fact-checker" },
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept-Language": "en-US,en;q=0.9"
+      },
     });
     const html = await pageRes.text();
     const t = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim();
     if (t) title = t;
-  } catch { /* ignore */ }
+  } catch { 
+    console.warn(`[YouTube] Could not fetch title for ${videoId}, using default`);
+  }
+  console.log(`[YouTube] Successfully extracted ${text.length} characters`);
   return { text, title };
 }
 
 async function extractWebsite(url: string): Promise<{ text: string; title: string }> {
+  console.log(`[Website] Extracting content from: ${url}`);
+  
   // Try Tavily extract first (richer content), fall back to raw fetch
   if (process.env.TAVILY_API_KEY) {
     try {
+      console.log(`[Website] Attempting Tavily extract...`);
       const tv  = tavily({ apiKey: process.env.TAVILY_API_KEY });
       const res = await (tv as any).extract([url]);   // extract API
       const raw = res?.results?.[0]?.rawContent ?? "";
       if (raw.length > 100) {
+        console.log(`[Website] Tavily extract successful - ${raw.length} chars`);
         return { text: raw.slice(0, 8000), title: res.results[0]?.title ?? url };
       }
-    } catch { /* fall through */ }
+      console.log(`[Website] Tavily extract returned insufficient content, falling back to direct fetch`);
+    } catch (err) {
+      console.warn(`[Website] Tavily extract failed:`, err);
+      // fall through to raw fetch
+    }
+  } else {
+    console.log(`[Website] TAVILY_API_KEY not set, using direct fetch`);
   }
 
   // Raw fetch fallback
-  const res  = await fetch(url, { headers: { "User-Agent": "SureBO/1.0 fact-checker" } });
-  const html = await res.text();
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  return {
-    text:  stripHtml(html).slice(0, 8000),
-    title: titleMatch?.[1]?.trim() ?? url,
-  };
+  try {
+    const res  = await fetch(url, { 
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9"
+      },
+      signal: AbortSignal.timeout(15000), // 15s timeout
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    
+    const html = await res.text();
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const text = stripHtml(html);
+    
+    console.log(`[Website] Direct fetch successful - ${text.length} chars extracted`);
+    
+    if (text.length < 100) {
+      throw new Error(`Extracted text too short (${text.length} chars). The website may be using JavaScript rendering or blocking bots.`);
+    }
+    
+    return {
+      text:  text.slice(0, 8000),
+      title: titleMatch?.[1]?.trim() ?? url,
+    };
+  } catch (err) {
+    console.error(`[Website] Direct fetch failed for ${url}:`, err);
+    throw new Error(`Unable to extract content from ${url}. ${err instanceof Error ? err.message : String(err)}. For CNA or modern news sites, the content may be JavaScript-rendered. Try copying the article text directly instead.`);
+  }
 }
 
 async function extractPdf(buffer: Buffer): Promise<string> {
@@ -203,6 +301,14 @@ export async function POST(req: NextRequest) {
       const ytId = extractYouTubeId(url);
       if (ytId) {
         const { text, title } = await extractYouTube(ytId);
+        
+        // Double-check we got content before returning success
+        if (!text || text.trim().length === 0) {
+          throw new Error(`YouTube extraction returned empty content for video ${ytId}. The video may not have captions available.`);
+        }
+        
+        console.log(`[API /extract] YouTube extraction successful: ${text.length} chars`);
+        
         return NextResponse.json({
           success:     true,
           text,
