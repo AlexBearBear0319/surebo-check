@@ -479,6 +479,12 @@ export default function SureBOPage() {
         if (!data.success) throw new Error(data.error);
 
         const { text, contentType, wordCount: wc, title } = data;
+        
+        // Validate we actually got usable content
+        if (!text || typeof text !== 'string' || text.trim().length < 50) {
+          throw new Error(`Extraction returned insufficient content (${(text as string)?.length || 0} chars). The source may not have text content available for extraction.`);
+        }
+        
         const meta =
           CONTENT_TYPE_LABEL[contentType as string] ?? {
             icon: "📎",
@@ -522,12 +528,18 @@ export default function SureBOPage() {
           );
         }
       } catch (err) {
+        const errorMsg = String(err).replace(/^Error:\s*/, '');
+        const helpText = '\\n\\n💡 **Alternative methods:**\\n' +
+          '• Copy the article/video text directly and paste it here\\n' +
+          '• For YouTube: Enable captions/subtitles on the video\\n' +
+          '• Try a different source or URL';
+        
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
               ? {
                   ...m,
-                  content: `Extraction failed: ${String(err)}`,
+                  content: `❌ **Extraction Failed**\\n\\n${errorMsg}${helpText}`,
                   isStreaming: false,
                 }
               : m

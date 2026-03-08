@@ -83,11 +83,19 @@ async function extractYouTube(videoId: string): Promise<{ text: string; title: s
                     ?? `YouTube video ${videoId}`;
       const desc  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
                     ?.replace(/\\n/g, " ").replace(/\\"/g, '"').slice(0, 2000) ?? "";
-      console.log(`[YouTube] Fallback to page scrape - Title: ${title}`);
-      return {
-        text:  `[No captions/transcript available for this video]\n\nTitle: ${title}\n\nDescription: ${desc || "No description available"}\n\nNote: This video does not have English captions enabled, or captions are unavailable. Please provide the claim text manually or try a different source.`,
-        title,
-      };
+      console.log(`[YouTube] Fallback to page scrape - Title: ${title}, Desc length: ${desc.length}`);
+      
+      // If we have a substantial description, use it
+      if (desc && desc.length >= 100) {
+        console.log(`[YouTube] Using description as content source`);
+        return {
+          text:  `Title: ${title}\n\nVideo Description:\n${desc}\n\n[Note: This content is from the video description since captions are not available. The actual video may contain additional claims not mentioned here.]`,
+          title,
+        };
+      }
+      
+      // No captions and no useful description - fail explicitly
+      throw new Error(`This YouTube video (${videoId}) does not have English captions or subtitles available, and has insufficient description text to extract claims from.`);
     } catch (fallbackErr) {
       console.error(`[YouTube] Fallback page scrape also failed:`, fallbackErr);
       throw new Error(`Unable to extract YouTube content for video ${videoId}. The video may be private, deleted, or blocked. Error: ${err}`);
@@ -117,15 +125,15 @@ async function extractYouTube(videoId: string): Promise<{ text: string; title: s
       const desc  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
                     ?.replace(/\\n/g, " ").replace(/\\"/g, '"').slice(0, 2000) ?? "";
       
-      if (desc && desc.length > 50) {
+      if (desc && desc.length >= 100) {
         console.log(`[YouTube] Using description as fallback - Title: ${title}`);
         return {
-          text: `Title: ${title}\n\nDescription: ${desc}\n\n[Note: Full transcript not available, using video description]`,
+          text: `Title: ${title}\n\nVideo Description:\n${desc}\n\n[Note: Full transcript not available, using video description. The actual video may contain additional information.]`,
           title,
         };
       }
       
-      throw new Error(`Video has no transcript and no description available`);
+      throw new Error(`This video has no usable transcript or description. Video may not have captions enabled, or description is too short to extract verifiable claims from.`);
     } catch (err2) {
       console.error(`[YouTube] Description fallback also failed:`, err2);
       throw new Error(`Unable to extract content from YouTube video ${videoId}. The video may not have captions enabled, or captions may be in a non-English language. Please manually transcribe or summarize the key claims from the video.`);
@@ -195,8 +203,19 @@ async function extractWebsite(url: string): Promise<{ text: string; title: strin
     
     console.log(`[Website] Direct fetch successful - ${text.length} chars extracted`);
     
-    if (text.length < 100) {
-      throw new Error(`Extracted text too short (${text.length} chars). The website may be using JavaScript rendering or blocking bots.`);
+    // Validate we got actual content, not just navigation
+    if (text.length < 200) {
+      throw new Error(`Extracted text too short (${text.length} chars). The website is likely using JavaScript rendering.`);
+    }
+    
+    // Detect if we only got navigation/menu items (common with JS-rendered sites)
+    const navKeywords = ['menu', 'navigation', 'skip to', 'search', 'subscribe', 'sign in', 'log in', 'follow us', 'social media'];
+    const lowerText = text.toLowerCase();
+    const navMatches = navKeywords.filter(kw => lowerText.includes(kw)).length;
+    const hasArticleIndicators = /\b(said|according to|reported|announced|stated)\b/i.test(text) || text.split('.').length > 5;
+    
+    if (navMatches >= 3 && !hasArticleIndicators && text.length < 800) {
+      throw new Error(`Website appears to be JavaScript-rendered (only navigation elements extracted). This is common with CNA and modern news sites.`);
     }
     
     return {
@@ -205,7 +224,14 @@ async function extractWebsite(url: string): Promise<{ text: string; title: strin
     };
   } catch (err) {
     console.error(`[Website] Direct fetch failed for ${url}:`, err);
-    throw new Error(`Unable to extract content from ${url}. ${err instanceof Error ? err.message : String(err)}. For CNA or modern news sites, the content may be JavaScript-rendered. Try copying the article text directly instead.`);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    
+    // Provide specific guidance based on URL
+    if (url.includes('channelnewsasia.com') || url.includes('cna.com')) {
+      throw new Error(`CNA articles require the Tavily API for content extraction (JavaScript-rendered site). Please copy and paste the article text directly instead. Error: ${errorMsg}`);
+    }
+    
+    throw new Error(`Unable to extract content from this website. ${errorMsg}\n\nTip: For modern news sites, copy the article text directly and paste it into the input box.`);
   }
 }
 
