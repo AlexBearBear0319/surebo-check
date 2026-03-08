@@ -1,36 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SureBO 🔍
+### Singapore's AI-Powered Multilingual Information Credibility Checker
+
+> **"SureBO?"** — Singlish for *"Are you sure?"* — helping Singaporeans verify claims before sharing.
+
+---
+
+<!-- Add a screenshot of the UI showing a verdict result here -->
+<!-- ![SureBO UI Screenshot](./docs/screenshot.png) -->
+
+---
+
+## What It Does
+
+SureBO lets users paste or speak any claim in **English, Malay, Mandarin, or Tamil** — no language barrier to fact-checking. It cross-references the claim against Singapore government sources, trusted news outlets, and real-time web data. Within seconds, it returns a clear verdict — **REAL / FAKE / MISLEADING / UNVERIFIED** — with a plain-language explanation and links to official sources.
+
+---
+
+## Features
+
+- 🌐 **Multilingual detection** — English, Malay (MS), Mandarin (ZH), Tamil (TA)
+- 🎙️ **Voice message transcription** — WhatsApp audio support via OpenAI Whisper
+- 🔎 **RAG pipeline** — grounded in 20+ trusted Singapore sources
+- 📊 **Trending claims dashboard** — see what's being fact-checked in real time
+- 🇸🇬 **Singlish-aware processing** — understands local phrasing and context
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | Next.js, Tailwind CSS |
+| **AI Model** | Qwen 2.5 VL 72B (Alibaba Cloud DashScope) |
+| **Orchestration** | LangChain |
+| **Audio Transcription** | OpenAI Whisper |
+| **Translation** | Helsinki-NLP (HuggingFace) |
+| **Database** | Supabase (PostgreSQL) |
+| **Vector / Search** | ClickHouse |
+| **Web Search** | Tavily |
+| **Observability** | Langfuse |
+
+---
+
+## Architecture
+
+```
+User Input (text / voice)
+  → Whisper (audio → text)
+  → Helsinki-NLP (Malay / Tamil / Mandarin → English)
+  → RAG Context Builder (ClickHouse + Tavily + past fact-checks)
+  → Qwen 2.5 VL 72B via Alibaba Cloud DashScope
+  → Verdict JSON { REAL | FAKE | MISLEADING | UNVERIFIED }
+  → Response localised back to user's language
+  → Saved to Supabase
+```
+
+---
+
+## Trusted Sources
+
+SureBO uses a tiered source system to weight credibility:
+
+| Tier | Sources |
+|---|---|
+| **Tier 1 — Official Government** | gov.sg, MOH, MAS, SPF, CPF, HDB, IRAS, ScamAlert |
+| **Tier 2 — Established Media** | CNA, Straits Times, TODAY, Zaobao, Berita Harian, Tamil Murasu |
+| **Tier 3 — Digital Media** | Mothership, MustShareNews, The Independent SG |
+
+---
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- A ClickHouse instance
+- Supabase project
+- API keys (see below)
+
+### Installation
+
+```bash
+git clone <repo>
+cd surebo-check
+npm install
+```
+
+### Environment Variables
+
+Create a `.env.local` file in the root directory:
+
+```env
+OPENAI_API_KEY=
+DASHSCOPE_API_KEY=
+HUGGINGFACE_API_TOKEN=
+CLICKHOUSE_HOST=
+CLICKHOUSE_USER=
+CLICKHOUSE_PASSWORD=
+CLICKHOUSE_DATABASE=
+LANGFUSE_SECRET_KEY=
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_BASE_URL=
+NEXT_PUBLIC_SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+TAVILY_API_KEY=
+```
+
+### Run Locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Hackathon Context
 
-## Learn More
+```
+Built for HackoMania 2026 — Ahrefs Challenge
 
-To learn more about Next.js, take a look at the following resources:
+"AI-powered solutions that help local and multilingual communities in Singapore
+assess information credibility, understand context, and make informed decisions."
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Contributing
 
-## Deploy on Vercel
+Pull requests are welcome. For major changes, please open an issue first to discuss what you'd like to change.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+[MIT](./LICENSE)
