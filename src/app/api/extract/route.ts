@@ -17,6 +17,11 @@ import { createReadStream }          from "fs";
 import { join }                      from "path";
 import { tmpdir }                    from "os";
 import { randomUUID }                from "crypto";
+import { exec }                      from "child_process";
+import { promisify }                 from "util";
+import { transcribeAudio }           from "@/lib/whisper";
+
+const execAsync = promisify(exec);
 
 export const runtime     = "nodejs";
 export const maxDuration = 120;
@@ -54,6 +59,80 @@ function stripHtml(html: string): string {
 
 // ─── Extractors ───────────────────────────────────────────────────────────────
 
+/**
+ * Download YouTube audio and transcribe with Whisper.
+ * Requires yt-dlp to be installed on the system.
+ */
+async function downloadAndTranscribeYouTube(videoId: string): Promise<{ text: string; title: string }> {
+  console.log(`[YouTube-Audio] Attempting to download and transcribe audio for ${videoId}`);
+  
+  const tmpFile = join(tmpdir(), `yt-${videoId}-${Date.now()}.mp3`);
+  
+  try {
+    // Check if yt-dlp is available
+    try {
+      await execAsync('which yt-dlp');
+    } catch {
+      console.log(`[YouTube-Audio] yt-dlp not found, trying youtube-dl`);
+      try {
+        await execAsync('which youtube-dl');
+      } catch {
+        throw new Error('Neither yt-dlp nor youtube-dl is installed. Please install yt-dlp: brew install yt-dlp');
+      }
+    }
+    
+    // Download audio only, convert to mp3
+    console.log(`[YouTube-Audio] Downloading audio to ${tmpFile}...`);
+    const downloadCmd = `yt-dlp -f "bestaudio[ext=m4a]/bestaudio" --extract-audio --audio-format mp3 --audio-quality 5 -o "${tmpFile}" "https://www.youtube.com/watch?v=${videoId}"`;
+    
+    try {
+      await execAsync(downloadCmd, { timeout: 60000 }); // 60s timeout
+    } catch (dlErr) {
+      // Try youtube-dl as fallback
+      console.log(`[YouTube-Audio] yt-dlp failed, trying youtube-dl...`);
+      const fallbackCmd = `youtube-dl -f "bestaudio[ext=m4a]/bestaudio" --extract-audio --audio-format mp3 --audio-quality 5 -o "${tmpFile}" "https://www.youtube.com/watch?v=${videoId}"`;
+      await execAsync(fallbackCmd, { timeout: 60000 });
+    }
+    
+    console.log(`[YouTube-Audio] Audio downloaded, transcribing with Whisper...`);
+    
+    // Read the audio file
+    const { readFile } = await import('fs/promises');
+    const audioBuffer = await readFile(tmpFile);
+    
+    // Transcribe with Whisper
+    const result = await transcribeAudio(audioBuffer, `youtube-${videoId}.mp3`);
+    
+    // Clean up temp file
+    await unlink(tmpFile).catch(() => {});
+    
+    console.log(`[YouTube-Audio] Transcription successful - ${result.transcript.length} chars`);
+    
+    // Fetch title from YouTube page
+    let title = `YouTube video ${videoId}`;
+    try {
+      const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+      });
+      const html = await pageRes.text();
+      const t = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.replace(" - YouTube", "").trim();
+      if (t) title = t;
+    } catch {
+      console.warn(`[YouTube-Audio] Could not fetch title, using default`);
+    }
+    
+    return {
+      text: `${result.transcript}\n\n[Note: This transcript was generated automatically from the video audio using speech recognition. There may be minor inaccuracies.]`,
+      title,
+    };
+  } catch (err) {
+    console.error(`[YouTube-Audio] Audio download/transcription failed:`, err);
+    // Clean up temp file if it exists
+    await unlink(tmpFile).catch(() => {});
+    throw err;
+  }
+}
+
 async function extractYouTube(videoId: string): Promise<{ text: string; title: string }> {
   const { YoutubeTranscript } = await import("youtube-transcript");
   let items: { text: string }[];
@@ -70,7 +149,16 @@ async function extractYouTube(videoId: string): Promise<{ text: string; title: s
     }
   } catch (err) {
     console.error(`[YouTube] Transcript fetch failed for ${videoId}:`, err);
-    // No captions available — fall back to fetching the page for title/description
+    
+    // FALLBACK 1: Try downloading audio and transcribing with Whisper
+    try {
+      console.log(`[YouTube] Attempting audio download + Whisper transcription fallback...`);
+      return await downloadAndTranscribeYouTube(videoId);
+    } catch (audioErr) {
+      console.error(`[YouTube] Audio transcription fallback failed:`, audioErr);
+    }
+    
+    // FALLBACK 2: Try fetching the page for title/description
     try {
       const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
         headers: { 
