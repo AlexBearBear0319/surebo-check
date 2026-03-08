@@ -100,8 +100,8 @@ async function downloadAndTranscribeYouTube(videoId: string): Promise<{ text: st
     const { readFile } = await import('fs/promises');
     const audioBuffer = await readFile(tmpFile);
     
-    // Transcribe with Whisper
-    const result = await transcribeAudio(audioBuffer, `youtube-${videoId}.mp3`);
+    // Transcribe with Whisper (default to English for YouTube videos)
+    const result = await transcribeAudio(audioBuffer, `youtube-${videoId}.mp3`, "en");
     
     // Clean up temp file
     await unlink(tmpFile).catch(() => {});

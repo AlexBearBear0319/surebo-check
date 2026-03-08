@@ -53,12 +53,24 @@ export async function transcribeAudio(
       ? Buffer.from(await (await fetch(input)).arrayBuffer())
       : input;
 
+  // Default to English if no language hint provided (prevents Malay false positives)
+  const language = languageHint || "en";
+  
+  // Use language-specific prompts for better accuracy
+  const prompts: Record<string, string> = {
+    en: "Transcribe the following audio accurately. Include proper punctuation and capitalization.",
+    ms: "Transkripkan audio ini dengan tepat dalam Bahasa Melayu.",
+    zh: "准确转录此音频内容。",
+    ta: "இந்த ஆடியோவை துல்லியமாக படியெடுக்கவும்.",
+  };
+  const prompt = prompts[language] || prompts.en;
+
   const form = new FormData();
   form.append("file", new Blob([buffer as unknown as ArrayBuffer], { type: mimeType(filename) }), filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
-  form.append("prompt", "This audio may be in English, Malay, Mandarin, Tamil, or Singlish. Transcribe all words exactly as spoken.");
-  if (languageHint) form.append("language", languageHint);
+  form.append("language", language);
+  form.append("prompt", prompt);
 
   const res = await fetch(`${OPENAI_BASE}/audio/transcriptions`, {
     method:  "POST",
