@@ -57,6 +57,7 @@ export async function transcribeAudio(
   form.append("file", new Blob([buffer as unknown as ArrayBuffer], { type: mimeType(filename) }), filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
+  form.append("prompt", "This audio may be in English, Malay, Mandarin, Tamil, or Singlish. Transcribe all words exactly as spoken.");
   if (languageHint) form.append("language", languageHint);
 
   const res = await fetch(`${OPENAI_BASE}/audio/transcriptions`, {
@@ -92,10 +93,11 @@ export async function transcribeWhatsAppVoice(buffer: Buffer): Promise<Transcrip
  * For typical voice recordings this path is never taken.
  */
 export async function transcribeLongAudio(
-  buffer:   Buffer,
-  filename = "audio.mp3",
+  buffer:        Buffer,
+  filename     = "audio.mp3",
+  languageHint?: string,
 ): Promise<TranscriptionResult> {
-  if (buffer.length <= MAX_CHUNK_BYTES) return transcribeAudio(buffer, filename);
+  if (buffer.length <= MAX_CHUNK_BYTES) return transcribeAudio(buffer, filename, languageHint);
 
   const chunks: Buffer[] = [];
   for (let i = 0; i < buffer.length; i += MAX_CHUNK_BYTES) {
@@ -103,7 +105,7 @@ export async function transcribeLongAudio(
   }
 
   const results = await Promise.all(
-    chunks.map((chunk, i) => transcribeAudio(chunk, `chunk-${i}-${filename}`)),
+    chunks.map((chunk, i) => transcribeAudio(chunk, `chunk-${i}-${filename}`, languageHint)),
   );
 
   return {
