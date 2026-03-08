@@ -109,7 +109,7 @@ export async function detectAudio(req: AudioDetectRequest): Promise<AudioDetecti
   const fn    = Buffer.isBuffer(input) && input.length > 24 * 1024 * 1024
     ? transcribeLongAudio : transcribeAudio;
 
-  const { transcript, language } = await fn(input as Buffer, fname);
+  const { transcript, language } = await fn(input as Buffer, fname, req.language);
   const claims = await extractClaims(transcript);
 
   const detected: AudioDetectionResult["claims"] = [];

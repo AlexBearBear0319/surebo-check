@@ -51,6 +51,11 @@ export function InputBar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
 
+  // Keep a ref to onSubmitText so the mr.onstop closure always calls the
+  // latest version (avoids stale-closure bug with activeSessionId).
+  const onSubmitTextRef = useRef(onSubmitText);
+  useEffect(() => { onSubmitTextRef.current = onSubmitText; }, [onSubmitText]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -107,7 +112,7 @@ export function InputBar({
             error?: string;
           };
           if (data.transcript?.trim()) {
-            onSubmitText(data.transcript.trim());
+            onSubmitTextRef.current(data.transcript.trim());
           } else {
             const msg =
               data.error ??
