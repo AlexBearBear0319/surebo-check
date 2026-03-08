@@ -1,7 +1,7 @@
 # SureBO 🔍
 ### Singapore's AI-Powered Multilingual Information Credibility Checker
 
-> **"SureBO?"** — Singlish for *"Are you sure?"* — helping Singaporeans verify claims before sharing.
+> **"SureBO?"** — English for *"Are you sure?"* — helping Singaporeans verify claims before sharing.
 
 ---
 
@@ -22,7 +22,7 @@ SureBO lets users paste or speak any claim in **English, Malay, Mandarin, or Tam
 - 🎙️ **Voice message transcription** — WhatsApp audio support via OpenAI Whisper
 - 🔎 **RAG pipeline** — grounded in 20+ trusted Singapore sources
 - 📊 **Trending claims dashboard** — see what's being fact-checked in real time
-- 🇸🇬 **Singlish-aware processing** — understands local phrasing and context
+- 🇸🇬 **English-aware processing** — understands local phrasing and context
 
 ---
 
